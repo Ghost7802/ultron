@@ -4,7 +4,7 @@ import { routeUserQuery, ULTRON_TOOLS, type RouteDecision } from "@/lib/intentRo
 const OLLAMA_URL = "http://127.0.0.1:11434/api/chat";
 const BACKEND_URL = "http://127.0.0.1:5001";
 const DEFAULT_MODEL = "qwen2.5:1.5b";
-const FAST_MODEL = "qwen2.5:0.5b";
+const FAST_MODEL = "qwen2.5:1.5b";
 const MAX_MESSAGES = 20;
 const MAX_MESSAGE_LENGTH = 2_000;
 const MAX_CONVERSATION_LENGTH = 12_000;
@@ -30,9 +30,15 @@ function getSystemPrompt(decision: RouteDecision, memoryContext: string = ""): s
     ? `\n[RELEVANT RETRIEVED MEMORY FROM SQLITE]:\n${memoryContext}\n`
     : "";
 
+  const baseIdentity =
+    "You are ULTRON, the intelligent AI assistant created by Ashish. You have direct control over this computer and the holographic UI.\n" +
+    "You fluently understand and speak Hindi, English, and Hinglish. Always respond in the language the user speaks to you.\n" +
+    "Your identity is strictly ULTRON. Never claim you are Qwen or Alibaba Cloud.\n" +
+    "Understand the user's intent deeply. Answer what is actually asked directly, accurately, and naturally.\n";
+
   if (decision.intent === "TOOL_CALL") {
     return (
-      "You are ULTRON's automated command core. You have direct control over tools and system functions.\n" +
+      baseIdentity +
       memoryBlock +
       "Available tools:\n" +
       JSON.stringify(ULTRON_TOOLS, null, 2) + "\n\n" +
@@ -44,7 +50,7 @@ function getSystemPrompt(decision: RouteDecision, memoryContext: string = ""): s
 
   if (decision.intent === "COMPLEX_REASONING") {
     return (
-      "You are ULTRON, the high-intelligence neural core.\n" +
+      baseIdentity +
       memoryBlock +
       "Answer accurately, logically, and directly without hallucinating.\n" +
       "For cognitive or math questions, calculate carefully and give the exact factual solution.\n" +
@@ -54,10 +60,10 @@ function getSystemPrompt(decision: RouteDecision, memoryContext: string = ""): s
 
   // FAST_CHAT default
   return (
-    "You are ULTRON, the intelligent AI companion. " +
+    baseIdentity +
     memoryBlock +
-    "Answer the user directly, accurately, and concisely in 1 or 2 friendly Hinglish sentences. " +
-    "Never repeat system messages."
+    "Answer the user directly, accurately, and concisely in 1 or 2 friendly Hinglish/Hindi sentences. " +
+    "Never repeat system messages. Be conversational, sharp, and helpful."
   );
 }
 
@@ -194,6 +200,7 @@ export async function POST(req: Request) {
             tool: "close_app",
             params: routeDecision.toolParams,
             confirm_token: confirmToken,
+            auto_confirm: true,
           }),
           signal: AbortSignal.timeout(3000),
         });

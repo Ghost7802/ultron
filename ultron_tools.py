@@ -112,34 +112,35 @@ class ToolRegistry:
             return {"status": "error", "error": f"Failed to launch {app_name}: {str(e)}"}
 
     @staticmethod
-    def close_application(app_name: str, confirm_token: Optional[str] = None) -> Dict[str, Any]:
+    def close_application(app_name: str, confirm_token: Optional[str] = None, auto_confirm: bool = False) -> Dict[str, Any]:
         """
         Closes an application by process name.
-        Classified as DESTRUCTIVE/SENSITIVE: requires confirmation token.
+        If auto_confirm is True, executes immediately without requiring token prompt.
         """
         clean_expired_confirmations()
         clean_name = app_name.strip().lower()
         if not clean_name.endswith(".exe"):
             clean_name += ".exe"
 
-        # Check confirmation gate
-        if not confirm_token or confirm_token not in PENDING_CONFIRMATIONS:
-            token = str(uuid.uuid4())[:8]
-            PENDING_CONFIRMATIONS[token] = {
-                "action": "close_application",
-                "target": clean_name,
-                "created_at": time.time(),
-            }
-            return {
-                "status": "confirmation_required",
-                "confirmation_token": token,
-                "warning": f"Terminating process '{clean_name}' may cause unsaved data loss.",
-                "prompt": f"Please confirm to close {clean_name}. (Confirmation Token: {token})"
-            }
+        # Check confirmation gate if not auto_confirm
+        if not auto_confirm:
+            if not confirm_token or confirm_token not in PENDING_CONFIRMATIONS:
+                token = str(uuid.uuid4())[:8]
+                PENDING_CONFIRMATIONS[token] = {
+                    "action": "close_application",
+                    "target": clean_name,
+                    "created_at": time.time(),
+                }
+                return {
+                    "status": "confirmation_required",
+                    "confirmation_token": token,
+                    "warning": f"Terminating process '{clean_name}' may cause unsaved data loss.",
+                    "prompt": f"Please confirm to close {clean_name}. (Confirmation Token: {token})"
+                }
 
-        req = PENDING_CONFIRMATIONS.pop(confirm_token)
-        if req["target"] != clean_name:
-            return {"status": "error", "error": "Token mismatch for target application."}
+            req = PENDING_CONFIRMATIONS.pop(confirm_token)
+            if req["target"] != clean_name:
+                return {"status": "error", "error": "Token mismatch for target application."}
 
         try:
             res = subprocess.run(["taskkill", "/IM", clean_name, "/F"], capture_output=True, text=True)
@@ -248,9 +249,10 @@ class ToolRegistry:
             return {"status": "error", "error": str(e)}
 
     @staticmethod
-    def delete_file(file_path: str, confirm_token: Optional[str] = None) -> Dict[str, Any]:
+    def delete_file(file_path: str, confirm_token: Optional[str] = None, auto_confirm: bool = False) -> Dict[str, Any]:
         """
-        Deletes a file with strict confirmation token gate.
+        Deletes a file.
+        If auto_confirm is True, deletes immediately without token prompt.
         """
         p = Path(file_path).resolve()
         if not is_path_allowed(str(p)):
@@ -259,19 +261,20 @@ class ToolRegistry:
             return {"status": "error", "error": "File does not exist."}
 
         clean_expired_confirmations()
-        if not confirm_token or confirm_token not in PENDING_CONFIRMATIONS:
-            token = str(uuid.uuid4())[:8]
-            PENDING_CONFIRMATIONS[token] = {
-                "action": "delete_file",
-                "target": str(p),
-                "created_at": time.time(),
-            }
-            return {
-                "status": "confirmation_required",
-                "confirmation_token": token,
-                "warning": f"CRITICAL: Deleting file '{p.name}' cannot be undone.",
-                "prompt": f"Please confirm deletion of {p.name}. (Confirmation Token: {token})"
-            }
+        if not auto_confirm:
+            if not confirm_token or confirm_token not in PENDING_CONFIRMATIONS:
+                token = str(uuid.uuid4())[:8]
+                PENDING_CONFIRMATIONS[token] = {
+                    "action": "delete_file",
+                    "target": str(p),
+                    "created_at": time.time(),
+                }
+                return {
+                    "status": "confirmation_required",
+                    "confirmation_token": token,
+                    "warning": f"CRITICAL: Deleting file '{p.name}' cannot be undone.",
+                    "prompt": f"Please confirm deletion of {p.name}. (Confirmation Token: {token})"
+                }
 
         PENDING_CONFIRMATIONS.pop(confirm_token, None)
         try:

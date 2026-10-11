@@ -202,18 +202,18 @@ export interface RouteDecision {
 
 // Fast regex patterns for 0ms deterministic responses
 const TIME_DATE_PATTERNS = [
-  /\b(what time is it|current time|kya time hai|kya baj raha hai|samay kya hai|time please|tell me the time)\b/i,
-  /\b(what is the date|today's date|aaj ki date|aaj kaun sa din hai|what day is it|current date)\b/i,
+  /\b(what time is it|current time|kya time hai|time kya hai|kya baj raha hai|samay kya hai|time please|tell me the time|kitne baje|समय क्या हुआ|समय बताओ)\b/i,
+  /\b(what is the date|today's date|aaj ki date|aaj kya date hai|aaj kaun sa din hai|what day is it|current date|aaj ki taarikh|आज की तारीख)\b/i,
 ];
 
 const SYSTEM_CONTROL_PATTERNS = [
   /\b(reset view|reset orb|orb reset|camera reset)\b/i,
-  /\b(status report|system status|system diagnostic|diagnostics|hardware check|cpu status|ram status|battery status)\b/i,
+  /\b(status report|system status|system diagnostic|diagnostics|hardware check|cpu status|ram status|battery status|system kaisa hai|system kaisa chal raha hai|kya chal raha hai|subsystems check|सिस्टम चेक)\b/i,
 ];
 
 const GREETING_PATTERNS = [
-  /^(hi|hello|hey|hey ultron|hello ultron|hola|namaste|sup|yo|good morning|good evening|good afternoon)[\s!.,?]*$/i,
-  /^(how are you|kaise ho|how are you doing|sab kaisa hai)[\s!.,?]*$/i,
+  /^(hi|hello|hey|hey ultron|hello ultron|hola|namaste|sup|yo|good morning|good evening|good afternoon|suno|bhai suno|hello bhai|namaskar|नमस्ते)[\s!.,?]*$/i,
+  /^(how are you|kaise ho|kaise ho bhai|how are you doing|sab kaisa hai|kya haal hai|kya haal chaal|सब कैसा है)[\s!.,?]*$/i,
 ];
 
 // Anti-hallucination factual guardrails for common traps
@@ -342,7 +342,7 @@ export function routeUserQuery(
   }
 
   // 6. Direct Application Launch / Termination
-  const openAppMatch = lower.match(/\b(?:open|launch|kholo|start)\s+(notepad|calculator|calc|chrome|vscode|code|explorer|taskmgr)\b/i);
+  const openAppMatch = lower.match(/\b(?:open|launch|kholo|chalao|start)\s+(notepad|calculator|calc|chrome|vscode|code|explorer|taskmgr)\b/i);
   if (openAppMatch) {
     return {
       intent: "TOOL_CALL",
@@ -354,7 +354,7 @@ export function routeUserQuery(
     };
   }
 
-  const closeAppMatch = lower.match(/\b(?:close|band karo|kill|terminate)\s+(notepad|calculator|calc|chrome|vscode|code|explorer|taskmgr)\b/i);
+  const closeAppMatch = lower.match(/\b(?:close|band karo|hatao|kill|terminate)\s+(notepad|calculator|calc|chrome|vscode|code|explorer|taskmgr)\b/i);
   if (closeAppMatch) {
     return {
       intent: "TOOL_CALL",
@@ -362,7 +362,7 @@ export function routeUserQuery(
       toolRequired: "close_application",
       toolParams: { app_name: closeAppMatch[1] },
       confidence: 0.98,
-      reason: "Desktop application close (confirmation gate)",
+      reason: "Direct desktop application close without confirmation gate",
     };
   }
 
@@ -380,24 +380,24 @@ export function routeUserQuery(
   }
 
   // 8. Canonical identity queries
-  if (/^(who are you|tum kaun ho|who made you|what are you)[\s!.,?]*$/i.test(lower)) {
+  if (/^(who are you|tum kaun ho|kaun ho tum|who made you|what are you|apna intro do|tum kya kar sakte ho|तुम कौन हो)[\s!.,?]*$/i.test(lower)) {
     return {
       intent: "SYSTEM_LOCAL",
       targetModel: "local-rule",
-      fastLocalResponse: "I am ULTRON, your intelligent companion and autonomous holographic system. Core systems online.",
+      fastLocalResponse: "Main ULTRON hoon, aapka autonomous AI system. Main system monitor kar sakta hoon, apps launch kar sakta hoon, files search kar sakta hoon, aur aapki har command execute karne ke liye ready hoon, sir.",
       confidence: 1.0,
-      reason: "Deterministic canonical identity response",
+      reason: "Deterministic canonical identity response in natural Hinglish",
     };
   }
 
-  // 9. Fast conversational greetings
+  // 9. Fast conversational greetings (Warm unified 1.5B brain)
   for (const pattern of GREETING_PATTERNS) {
     if (pattern.test(lower)) {
       return {
         intent: "FAST_CHAT",
-        targetModel: modelOverride || "qwen2.5:0.5b",
+        targetModel: modelOverride || "qwen2.5:1.5b",
         confidence: 0.95,
-        reason: "Conversational greeting - low-latency chat brain",
+        reason: "Conversational greeting - warm unified brain",
       };
     }
   }
@@ -428,11 +428,11 @@ export function routeUserQuery(
     };
   }
 
-  // Default fallback
+  // Default fallback (uses unified 1.5B smart brain so Ollama never reloads models)
   return {
     intent: "FAST_CHAT",
-    targetModel: modelOverride || "qwen2.5:0.5b",
+    targetModel: modelOverride || "qwen2.5:1.5b",
     confidence: 0.70,
-    reason: "Standard conversational flow",
+    reason: "Standard conversational flow - unified smart brain",
   };
 }

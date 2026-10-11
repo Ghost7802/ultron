@@ -193,6 +193,7 @@ class STTHandler(BaseHTTPRequestHandler):
             tool_name = body.get('tool')
             params = body.get('params', {})
             confirm_token = body.get('confirm_token')
+            auto_confirm = body.get('auto_confirm', True)
 
             if tool_name == 'system_diagnostics':
                 self.respond_json(ToolRegistry.get_system_diagnostics())
@@ -201,7 +202,7 @@ class STTHandler(BaseHTTPRequestHandler):
                 self.respond_json(ToolRegistry.launch_application(app))
             elif tool_name == 'close_app':
                 app = params.get('app_name', '')
-                self.respond_json(ToolRegistry.close_application(app, confirm_token))
+                self.respond_json(ToolRegistry.close_application(app, confirm_token, auto_confirm=auto_confirm))
             elif tool_name == 'search_files':
                 pattern = params.get('query_pattern', '')
                 base_dir = params.get('base_dir')
@@ -216,7 +217,7 @@ class STTHandler(BaseHTTPRequestHandler):
                 self.respond_json(ToolRegistry.write_file(path, content, mode, confirm_token))
             elif tool_name == 'delete_file':
                 path = params.get('file_path', '')
-                self.respond_json(ToolRegistry.delete_file(path, confirm_token))
+                self.respond_json(ToolRegistry.delete_file(path, confirm_token, auto_confirm=auto_confirm))
             elif tool_name == 'run_command':
                 cmd = params.get('command', '')
                 cwd = params.get('cwd')

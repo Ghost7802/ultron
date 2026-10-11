@@ -23,7 +23,7 @@ function limitConversation(messages: ChatMessage[]): ChatMessage[] {
 const SPEECH_START_LEVEL = 0.010;
 const SPEECH_END_LEVEL = 0.008;
 const BARGE_IN_LEVEL = 0.015;
-const SILENCE_END_MS = 650;
+const SILENCE_END_MS = 450;
 const MAX_RECORDING_MS = 8_000;
 const MIN_RECORDING_MS = 350;
 const MAX_CONVERSATION_MESSAGES = 20;
@@ -78,6 +78,7 @@ export default function JarvisOrb() {
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const speechRecognitionRef = useRef<any>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -106,6 +107,11 @@ export default function JarvisOrb() {
   const cancelOngoingAction = useCallback(() => {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
+    }
+    if (speechRecognitionRef.current) {
+      try {
+        speechRecognitionRef.current.abort();
+      } catch {}
     }
     speechQueueRef.current = [];
     isPlayingQueueRef.current = false;
@@ -225,6 +231,7 @@ export default function JarvisOrb() {
       sessionId !== voiceSessionRef.current ||
       isSpeakingRef.current ||
       isProcessingRef.current ||
+      isChatBusyRef.current ||
       blob.size < 500
     ) {
       return;
@@ -313,6 +320,12 @@ export default function JarvisOrb() {
 
   const stopVoiceStream = () => {
     pauseVoiceRecorder();
+    if (speechRecognitionRef.current) {
+      try {
+        speechRecognitionRef.current.stop();
+      } catch {}
+      speechRecognitionRef.current = null;
+    }
     mediaRecorderRef.current = null;
     audioChunksRef.current = [];
     recordingStartedAtRef.current = null;
@@ -397,6 +410,47 @@ export default function JarvisOrb() {
       analyser.fftSize = 2048;
       source.connect(analyser);
       analyserRef.current = analyser;
+
+      // Native SpeechRecognition for instant 0ms streaming transcription
+      if (typeof window !== "undefined" && ("webkitSpeechRecognition" in window || "SpeechRecognition" in window)) {
+        try {
+          const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+          const rec = new SpeechRec();
+          rec.continuous = true;
+          rec.interimResults = true;
+          rec.lang = "en-IN";
+          rec.onresult = (evt: any) => {
+            if (!voiceActiveRef.current || isSpeakingRef.current) return;
+            let interim = "";
+            let final = "";
+            for (let i = evt.resultIndex; i < evt.results.length; ++i) {
+              if (evt.results[i].isFinal) {
+                final += evt.results[i][0].transcript;
+              } else {
+                interim += evt.results[i][0].transcript;
+              }
+            }
+            if (interim) {
+              setVoiceLabel(`HEARING: "${interim.slice(0, 16)}…"`);
+            }
+            if (final.trim() && !isChatBusyRef.current) {
+              console.info("[ULTRON NATIVE STT]", final.trim());
+              setVoiceLabel("THINKING…");
+              updateVisualState("thinking");
+              void handleUserSpeech(final.trim(), sessionId);
+            }
+          };
+          rec.onerror = (recErr: any) => {
+            console.debug("Native speech notice:", recErr?.error);
+          };
+          try {
+            rec.start();
+            speechRecognitionRef.current = rec;
+          } catch {}
+        } catch (e) {
+          console.debug("Native speech rec bypassed:", e);
+        }
+      }
 
       const audioTrack = stream.getAudioTracks()[0];
       console.info("[ULTRON MIC]", {

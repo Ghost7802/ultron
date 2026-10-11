@@ -141,7 +141,14 @@ def wait_for_server(url: str, process: subprocess.Popen[bytes], name: str) -> No
         time.sleep(0.5)
     raise RuntimeError(f"{name} did not become ready within {STARTUP_TIMEOUT_SECONDS}s.")
 
-def choose_port() -> int:
+def choose_port(preferred: int = 3000) -> int:
+    for test_port in (preferred, 3001, 3002):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            try:
+                listener.bind(("127.0.0.1", test_port))
+                return test_port
+            except OSError:
+                continue
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
         listener.bind(("127.0.0.1", 0))
         return int(listener.getsockname()[1])
@@ -329,6 +336,21 @@ def main() -> None:
         # Start background health supervisor
         threading.Thread(target=supervisor_health_loop, name="supervisor-health", daemon=True).start()
         
+        # Auto-grant Camera and Microphone permissions to WebView2 without user prompt
+        media_args = (
+            "--use-fake-ui-for-media-stream "
+            "--enable-features=WebRTCPipeWireCapturer "
+            "--autoplay-policy=no-user-gesture-required "
+            "--disable-features=PreloadMediaEngagementData"
+        )
+        existing_args = os.environ.get("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "")
+        os.environ["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = f"{existing_args} {media_args}".strip()
+
+        # Set persistent user data directory so all permissions and states are permanently preserved
+        wv2_data_dir = LOCAL_APP_DATA / "ULTRON" / "webview2_data"
+        wv2_data_dir.mkdir(parents=True, exist_ok=True)
+        os.environ["WEBVIEW2_USER_DATA_FOLDER"] = str(wv2_data_dir)
+
         webview.create_window(
             title="U.L.T.R.O.N.",
             url=url,

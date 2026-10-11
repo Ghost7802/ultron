@@ -10,7 +10,8 @@
 /installer/payload/
 /installer/output/
 /installer/.build/
-/__pycache__/
+__pycache__/
+*.py[cod]
 
 # misc
 .DS_Store
