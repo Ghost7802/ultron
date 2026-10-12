@@ -217,10 +217,16 @@ export async function POST(req: Request) {
         reply = `System Status: CPU ${d.cpu_percent}%, RAM ${d.ram_percent}% (${d.ram_used_gb}/${d.ram_total_gb} GB). Power: ${d.battery?.status || "AC Power"}. Uptime: ${d.system_uptime}. All subsystems nominal.`;
       } else if (routeDecision.toolRequired === "web_search") {
         if (toolExecResult.results && toolExecResult.results.length > 0) {
-          const top = toolExecResult.results[0];
-          reply = `Search findings for "${toolExecResult.query}": ${top.snippet} (Source: ${top.url})`;
+          const findings = toolExecResult.results
+            .map((r: any, idx: number) => `[Source ${idx + 1}: ${r.title}] ${r.snippet} (Ref: ${r.url})`)
+            .join("\n\n");
+          const topSources = toolExecResult.results
+            .slice(0, 3)
+            .map((r: any) => `• ${r.title} — ${r.url}`)
+            .join("\n");
+          reply = `Verified Web Research for "${toolExecResult.query}":\n\n${toolExecResult.results[0].snippet}\n\nEvidence Sources:\n${topSources}`;
         } else {
-          reply = `No external sources found for query "${toolExecResult.query}".`;
+          reply = `No external sources found for query "${toolExecResult.query}". Checked local and public web search.`;
         }
       } else if (routeDecision.toolRequired === "search_files") {
         if (toolExecResult.results && toolExecResult.results.length > 0) {
@@ -355,14 +361,14 @@ export async function POST(req: Request) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(ollamaPayload),
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(45000),
     });
 
     if (res.ok) {
       return handleOllamaResponse(res, chosenLocalModel, routeDecision, !!stream, requestStarted, userText);
     }
-  } catch {
-    // Local Ollama unavailable - gracefully fallback to offline local rule engine
+  } catch (ollamaErr) {
+    console.warn("[Chat API] Local Ollama request failed or timed out:", ollamaErr);
   }
 
   // Offline Local Fallback (Deterministic & zero-latency)

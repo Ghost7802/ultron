@@ -23,15 +23,20 @@ def main():
     total = len(TESTS)
     passed = 0
 
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     for test_path in TESTS:
-        print(f"\n▶ Executing: {test_path}")
-        result = subprocess.run([sys.executable, test_path], capture_output=True, text=True)
+        print(f"\n>> Executing: {test_path}")
+        result = subprocess.run([sys.executable, test_path], capture_output=True, text=True, encoding="utf-8", errors="replace")
         print(result.stdout, end="")
         if result.returncode != 0:
             print(result.stderr, file=sys.stderr)
-            print(f"✖ FAILED: {test_path}")
+            print(f"[FAIL] FAILED: {test_path}")
         else:
-            print(f"✔ PASSED: {test_path}")
+            print(f"[PASS] PASSED: {test_path}")
             passed += 1
 
     print("\n" + "=" * 64)

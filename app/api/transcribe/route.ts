@@ -30,7 +30,7 @@ export async function POST(req: Request) {
         method: "POST",
         headers: { "Content-Type": contentType },
         body: audioBuffer,
-        signal: AbortSignal.timeout(2000),
+        signal: AbortSignal.timeout(15000),
       });
 
       if (sttRes.ok) {
@@ -39,8 +39,8 @@ export async function POST(req: Request) {
           return NextResponse.json({ text: data.text });
         }
       }
-    } catch {
-      // Local python STT server not running - return empty text to let browser speech recognition or text prompt handle input
+    } catch (sttErr) {
+      console.warn("[Transcribe API] STT server request failed or timed out:", sttErr);
     }
 
     return NextResponse.json({ text: "" });

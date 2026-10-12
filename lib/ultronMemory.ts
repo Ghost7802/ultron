@@ -28,8 +28,14 @@ export interface ConversationTurn {
   timestamp: number;
 }
 
-// 5 Separate In-Memory Stores
+import fs from "fs";
+import path from "path";
+
+// 5 Separate Stores
+// Layer 1 is in-memory session working context (ephemeral per session)
 const layer1WorkingContext: ConversationTurn[] = [];
+
+// Layers 2 to 5 are persistently stored on the local machine
 const layer2UserPreferences = new Map<string, MemoryEntry>();
 const layer3ProjectState = new Map<string, MemoryEntry>();
 const layer4WorkflowCorrections = new Map<string, MemoryEntry>();
@@ -38,7 +44,65 @@ const layer5VerifiedResearch = new Map<string, MemoryEntry>();
 // Pending memory reset confirmation
 let pendingResetToken: { token: string; expiresAt: number } | null = null;
 
-// Initial Seeds
+function getMemoryFilePath(): string {
+  if (process.env.LOCALAPPDATA) {
+    const dir = path.join(process.env.LOCALAPPDATA, "ULTRON", "memory");
+    try {
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      return path.join(dir, "ultron_memory.json");
+    } catch {}
+  }
+  return path.join(process.cwd(), "ultron_memory_store.json");
+}
+
+function persistToDisk(): void {
+  try {
+    const filePath = getMemoryFilePath();
+    const data = {
+      version: "2.0",
+      savedAt: new Date().toISOString(),
+      layer2: Array.from(layer2UserPreferences.values()),
+      layer3: Array.from(layer3ProjectState.values()),
+      layer4: Array.from(layer4WorkflowCorrections.values()),
+      layer5: Array.from(layer5VerifiedResearch.values()),
+    };
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("[ultronMemory] Failed to write persistent memory to disk:", err);
+  }
+}
+
+function loadFromDisk(): void {
+  try {
+    const filePath = getMemoryFilePath();
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, "utf-8");
+      const data = JSON.parse(raw);
+      if (Array.isArray(data.layer2)) {
+        for (const item of data.layer2) layer2UserPreferences.set(item.key, item);
+      }
+      if (Array.isArray(data.layer3)) {
+        for (const item of data.layer3) layer3ProjectState.set(item.key, item);
+      }
+      if (Array.isArray(data.layer4)) {
+        for (const item of data.layer4) {
+          const slug = item.key.toLowerCase().replace(/[^a-z0-9]/g, "_").slice(0, 32);
+          layer4WorkflowCorrections.set(slug, item);
+        }
+      }
+      if (Array.isArray(data.layer5)) {
+        for (const item of data.layer5) {
+          const slug = item.key.toLowerCase().replace(/[^a-z0-9]/g, "_").slice(0, 32);
+          layer5VerifiedResearch.set(slug, item);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[ultronMemory] Failed to load persistent memory from disk:", err);
+  }
+}
+
+// Initial Seeds if fresh
 const now = new Date().toISOString();
 layer2UserPreferences.set("owner", {
   id: "pref_owner",
@@ -73,6 +137,9 @@ layer3ProjectState.set("active_project", {
   updatedAt: now,
 });
 
+// Load persistent data from disk on initialization (survives app restarts)
+loadFromDisk();
+
 export const ultronMemory = {
   // Layer 1: Working Context
   recordTurn(role: "user" | "assistant", content: string, summary: string = ""): void {
@@ -105,6 +172,7 @@ export const ultronMemory = {
       updatedAt: new Date().toISOString(),
     };
     layer2UserPreferences.set(key, entry);
+    persistToDisk();
     return entry;
   },
 
@@ -122,6 +190,7 @@ export const ultronMemory = {
       updatedAt: new Date().toISOString(),
     };
     layer3ProjectState.set(key, entry);
+    persistToDisk();
     return entry;
   },
 
@@ -140,6 +209,7 @@ export const ultronMemory = {
       updatedAt: new Date().toISOString(),
     };
     layer4WorkflowCorrections.set(slug, entry);
+    persistToDisk();
     return entry;
   },
 
@@ -159,6 +229,7 @@ export const ultronMemory = {
       updatedAt: new Date().toISOString(),
     };
     layer5VerifiedResearch.set(slug, entry);
+    persistToDisk();
     return entry;
   },
 
@@ -277,6 +348,7 @@ export const ultronMemory = {
     layer3ProjectState.clear();
     layer4WorkflowCorrections.clear();
     layer5VerifiedResearch.clear();
+    persistToDisk();
 
     return {
       success: true,

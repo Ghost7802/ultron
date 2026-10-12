@@ -203,7 +203,7 @@ export interface RouteDecision {
 // Fast regex patterns for 0ms deterministic responses
 const TIME_DATE_PATTERNS = [
   /\b(what time is it|current time|kya time hai|time kya hai|kya baj raha hai|samay kya hai|time please|tell me the time|kitne baje|समय क्या हुआ|समय बताओ)\b/i,
-  /\b(what is the date|today's date|aaj ki date|aaj kya date hai|aaj kaun sa din hai|what day is it|current date|aaj ki taarikh|आज की तारीख)\b/i,
+  /\b(what is the date|today's date|aaj ki date|aaj kya date hai|aaj kaun sa din|aaj.*date|what day is it|what.*date|current date|aaj ki taarikh|आज की तारीख)\b/i,
 ];
 
 const SYSTEM_CONTROL_PATTERNS = [
@@ -393,7 +393,10 @@ export function routeUserQuery(
   }
 
   // 8. Canonical identity queries
-  if (/^(who are you|tum kaun ho|kaun ho tum|who made you|what are you|apna intro do|tum kya kar sakte ho|तुम कौन हो)[\s!.,?]*$/i.test(lower)) {
+  if (
+    /\b(who are you|tum kaun ho|kaun ho tum|who made you|what are you|apna intro do|tum kya kar sakte ho|तुम कौन हो)\b/i.test(lower) &&
+    !/\b(code|python|function|write|calculate)\b/i.test(lower)
+  ) {
     return {
       intent: "SYSTEM_LOCAL",
       targetModel: "local-rule",
