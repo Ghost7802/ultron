@@ -134,8 +134,8 @@ When asked to perform complex goals (*"ULTRON, test my project, identify failure
 
 ### 1. Clone & Install Dependencies
 ```bash
-git clone https://github.com/ashish7802/hey.git
-cd hey
+git clone https://github.com/ashish7802/ultron.git
+cd ultron
 npm install
 py -m pip install faster-whisper pywebview psutil
 ```
@@ -227,3 +227,22 @@ python tests/run_all_evals.py
 ## 📄 License
 
 This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+- **100% Offline & Local**: No microphone audio, video frames, keystrokes, or code snippets are ever transmitted to third-party cloud servers.
+- **Path Sandboxing**: File operations are strictly confined within the active project workspace root and operating system temporary directory.
+- **Cryptographic Gate**: Destructive actions (`close_application`, `delete_file`, `reset_memory`) generate an ephemeral single-use confirmation token valid for 120 seconds.
+- **Read-Only UIA**: The Windows UI Automation bridge contains zero mouse-clicking, keystroke generation, or window modification primitives.
+
+---
+
+## 👤 Author & Credits
+
+- **Creator & Maintainer**: **Ashish** ([@ashish7802](https://github.com/ashish7802))
+- **Concept Inspiration**: Marvel Studios' *Iron Man*, *Avengers: Age of Ultron*, and J.A.R.V.I.S.
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
