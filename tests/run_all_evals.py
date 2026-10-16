@@ -13,6 +13,7 @@ TESTS = [
     "tests/test_memory_system.py",
     "tests/test_computer_control.py",
     "tests/test_agent_planner.py",
+    "tests/test_ui_automation.py",
 ]
 
 def main():

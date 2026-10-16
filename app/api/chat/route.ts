@@ -3,6 +3,7 @@ import { routeUserQuery, ULTRON_TOOLS, type RouteDecision } from "@/lib/intentRo
 import { ultronMemory } from "@/lib/ultronMemory";
 import { ultronTools } from "@/lib/ultronTools";
 import { ultronPlanner } from "@/lib/ultronPlanner";
+import { ultronAgentEngine } from "@/lib/ultronAgentEngine";
 
 // Strictly local model endpoints
 const OLLAMA_URL = process.env.OLLAMA_URL || "http://127.0.0.1:11434/api/chat";
@@ -235,8 +236,50 @@ export async function POST(req: Request) {
         } else {
           reply = `No files matching '${routeDecision.toolParams?.query_pattern}' found.`;
         }
+      } else if (routeDecision.toolRequired === "read_file") {
+        if (toolExecResult.status === "success") {
+          reply = `File '${toolExecResult.file_path}' contents:\n${toolExecResult.content}`;
+        } else {
+          reply = `Security/IO Error: ${toolExecResult.error}`;
+        }
+      } else if (routeDecision.toolRequired === "list_directory") {
+        if (toolExecResult.status === "success") {
+          const names = toolExecResult.entries.slice(0, 10).map((e: any) => `${e.type === "directory" ? "[DIR]" : "[FILE]"} ${e.name}`).join("\n");
+          reply = `Directory '${toolExecResult.dir_path}' (${toolExecResult.count} entries):\n${names}`;
+        } else {
+          reply = `Error: ${toolExecResult.error}`;
+        }
+      } else if (routeDecision.toolRequired === "run_command" || routeDecision.toolRequired === "run_developer_command") {
+        if (toolExecResult.status === "success") {
+          reply = `Command executed successfully (exit code ${toolExecResult.exit_code}):\n${toolExecResult.stdout || "(no output)"}`;
+        } else if (toolExecResult.status === "timeout") {
+          reply = `Command timed out: ${toolExecResult.error}`;
+        } else {
+          reply = `Command failed (exit code ${toolExecResult.exit_code}):\n${toolExecResult.stderr || toolExecResult.error || toolExecResult.stdout}`;
+        }
+      } else if (routeDecision.toolRequired === "enumerate_windows") {
+        if (toolExecResult.status === "success") {
+          const winList = (toolExecResult.windows || [])
+            .map((w: any) => `• [PID ${w.pid}] "${w.title}" (${w.process_name || w.class_name}) - HWND: ${w.hwnd}`)
+            .join("\n");
+          reply = `Discovered ${toolExecResult.count} active desktop windows:\n${winList || "(No visible top-level windows detected)"}`;
+        } else {
+          reply = `UI Automation Error: ${toolExecResult.error}`;
+        }
+      } else if (routeDecision.toolRequired === "inspect_window_elements") {
+        if (toolExecResult.status === "success") {
+          const root = toolExecResult.window_root;
+          const rootSummary = `Window: "${root?.name || "Window"}" (${root?.control_type}, class: ${root?.class_name}, bounds: ${root?.bounds?.width}x${root?.bounds?.height})`;
+          const elList = (toolExecResult.elements || [])
+            .slice(0, 15)
+            .map((el: any) => `  [Depth ${el.depth}] ${el.control_type} "${el.name || el.automation_id || ""}" (${el.is_enabled ? "Enabled" : "Disabled"}${el.has_keyboard_focus ? ", Focused" : ""})`)
+            .join("\n");
+          reply = `${rootSummary}\nInspected ${toolExecResult.element_count} UI accessibility elements:\n${elList}`;
+        } else {
+          reply = `UI Inspection Failed: ${toolExecResult.error}`;
+        }
       } else {
-        reply = toolExecResult.message || toolExecResult.error || "Tool execution resolved.";
+        reply = toolExecResult.message || (toolExecResult.error ? `Error: ${toolExecResult.error}` : "Tool execution resolved.");
       }
 
       const elapsedMs = Math.round(performance.now() - requestStarted);
@@ -307,31 +350,77 @@ export async function POST(req: Request) {
     }
   }
 
-  // 5. Autonomous Agent Loop Planning with Real Verification
+  // 5. Autonomous Agent Loop Planning with Real Verification & Dynamic ReAct Engine (Phase 2)
   if (routeDecision.intent === "AGENT_PLAN") {
     try {
-      const planReport = await ultronPlanner.planAndExecute(routeDecision.planGoal || userText);
-      const reply = `Agent Loop Executed: ${planReport.passed_steps}/${planReport.total_steps} steps passed (${planReport.overall_status}) in ${planReport.elapsed_seconds}s. All verification criteria met.`;
+      const agentGoal = routeDecision.planGoal || userText;
+      const loopResult = await ultronAgentEngine.runLoop(agentGoal, {
+        model: userModelOverride || LOCAL_MODEL,
+        confirmToken: effectiveConfirmToken,
+        maxIterations: 5,
+        overallTimeoutMs: 60_000,
+        perStepTimeoutMs: 25_000,
+      });
+
+      const reply = loopResult.reply || `Task concluded with status '${loopResult.status}' in ${loopResult.iterations} steps.`;
       const elapsedMs = Math.round(performance.now() - requestStarted);
       recordMemoryTurn(userText, reply);
 
       if (stream) {
-        return createStreamResponse(reply, routeDecision, "agent-planner", elapsedMs, {
-          planReport,
-          activePlan: planReport.activePlan,
+        return createStreamResponse(reply, routeDecision, "agent-loop", elapsedMs, {
+          planReport: {
+            goal: agentGoal,
+            total_steps: loopResult.activePlan.total,
+            passed_steps: loopResult.activePlan.passed,
+            overall_status: loopResult.activePlan.status,
+            elapsed_seconds: +(loopResult.elapsedMs / 1000).toFixed(2),
+          },
+          activePlan: loopResult.activePlan,
+          agentSteps: loopResult.steps,
         });
       }
 
       return NextResponse.json({
         reply,
-        model: "agent-planner",
+        model: "agent-loop",
         route: routeDecision,
-        planReport,
-        activePlan: planReport.activePlan,
+        planReport: {
+          goal: agentGoal,
+          total_steps: loopResult.activePlan.total,
+          passed_steps: loopResult.activePlan.passed,
+          overall_status: loopResult.activePlan.status,
+          elapsed_seconds: +(loopResult.elapsedMs / 1000).toFixed(2),
+        },
+        activePlan: loopResult.activePlan,
+        agentSteps: loopResult.steps,
         elapsedMs,
       });
     } catch (err) {
-      console.warn("Agent plan error:", err);
+      console.warn("Dynamic agent loop error, falling back to planner:", err);
+      try {
+        const planReport = await ultronPlanner.planAndExecute(routeDecision.planGoal || userText);
+        const reply = `Agent Loop Executed: ${planReport.passed_steps}/${planReport.total_steps} steps passed (${planReport.overall_status}) in ${planReport.elapsed_seconds}s. All verification criteria met.`;
+        const elapsedMs = Math.round(performance.now() - requestStarted);
+        recordMemoryTurn(userText, reply);
+
+        if (stream) {
+          return createStreamResponse(reply, routeDecision, "agent-planner", elapsedMs, {
+            planReport,
+            activePlan: planReport.activePlan,
+          });
+        }
+
+        return NextResponse.json({
+          reply,
+          model: "agent-planner",
+          route: routeDecision,
+          planReport,
+          activePlan: planReport.activePlan,
+          elapsedMs,
+        });
+      } catch (fallbackErr) {
+        console.warn("Agent planner fallback error:", fallbackErr);
+      }
     }
   }
 

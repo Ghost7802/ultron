@@ -134,13 +134,79 @@ export const ULTRON_TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "list_directory",
+    description: "Lists files and subdirectories within approved workspace directory",
+    riskLevel: "SAFE",
+    parameters: {
+      dir_path: {
+        type: "string",
+        description: "Directory path within workspace to list (default: current workspace root)",
+      },
+    },
+  },
+  {
+    name: "move_file",
+    description: "Moves or renames a file within approved workspace boundaries",
+    riskLevel: "SAFE",
+    parameters: {
+      source_path: {
+        type: "string",
+        description: "Source file path within workspace",
+        required: true,
+      },
+      dest_path: {
+        type: "string",
+        description: "Destination file path within workspace",
+        required: true,
+      },
+      overwrite: {
+        type: "boolean",
+        description: "Whether to overwrite destination file if it exists",
+      },
+    },
+  },
+  {
+    name: "patch_file",
+    description: "Applies a targeted text patch to a file with automatic backup creation",
+    riskLevel: "SAFE",
+    parameters: {
+      file_path: {
+        type: "string",
+        description: "Path to file to patch",
+        required: true,
+      },
+      target_content: {
+        type: "string",
+        description: "Exact text snippet to replace",
+        required: true,
+      },
+      replacement_content: {
+        type: "string",
+        description: "New text to insert in place of target_content",
+        required: true,
+      },
+    },
+  },
+  {
     name: "run_developer_command",
-    description: "Runs safe developer workflow commands (e.g. git status, npm test, python tests)",
+    description: "Runs safe developer workflow commands (e.g. git status, npm test, python tests, pytest)",
     riskLevel: "SAFE",
     parameters: {
       command: {
         type: "string",
         description: "Shell command to execute",
+        required: true,
+      },
+    },
+  },
+  {
+    name: "run_command",
+    description: "Runs safe developer workflow commands (e.g. git status, npm test, python tests, pytest)",
+    riskLevel: "SAFE",
+    parameters: {
+      command: {
+        type: "string",
+        description: "Command to execute",
         required: true,
       },
     },
@@ -187,6 +253,48 @@ export const ULTRON_TOOLS: ToolDefinition[] = [
       },
     },
   },
+  {
+    name: "enumerate_windows",
+    description: "Discovers and lists open desktop windows with titles, PIDs, process names, and bounds (Strictly Read-Only)",
+    riskLevel: "SAFE",
+    parameters: {
+      filter: {
+        type: "string",
+        description: "Optional filter for window title or process name",
+      },
+    },
+  },
+  {
+    name: "inspect_window_elements",
+    description: "Inspects UI accessibility tree of a window (control types, names, AutomationIds, focus/enabled state, bounds) (Strictly Read-Only)",
+    riskLevel: "SAFE",
+    parameters: {
+      target_pid: {
+        type: "number",
+        description: "Process ID of the target window",
+      },
+      window_title: {
+        type: "string",
+        description: "Title substring of the target window",
+      },
+      process_name: {
+        type: "string",
+        description: "Process name of the target application (e.g. 'code', 'chrome', 'notepad')",
+      },
+      hwnd: {
+        type: "number",
+        description: "Native window handle (HWND) if known",
+      },
+      max_depth: {
+        type: "number",
+        description: "Maximum tree traversal depth (1-6, default: 3)",
+      },
+      max_elements: {
+        type: "number",
+        description: "Maximum number of UI elements to return (default: 50, max: 100)",
+      },
+    },
+  },
 ];
 
 export interface RouteDecision {
@@ -206,9 +314,23 @@ const TIME_DATE_PATTERNS = [
   /\b(what is the date|today's date|aaj ki date|aaj kya date hai|aaj kaun sa din|aaj.*date|what day is it|what.*date|current date|aaj ki taarikh|आज की तारीख)\b/i,
 ];
 
-const SYSTEM_CONTROL_PATTERNS = [
+export const ORB_CONTROL_PATTERNS = [
   /\b(reset view|reset orb|orb reset|camera reset)\b/i,
-  /\b(status report|system status|system diagnostic|diagnostics|hardware check|cpu status|ram status|battery status|system kaisa hai|system kaisa chal raha hai|kya chal raha hai|subsystems check|सिस्टम चेक)\b/i,
+];
+
+export const TELEMETRY_PATTERNS = [
+  /\b(status report|system status|system diagnostic|diagnostics|hardware check|subsystems check|सिस्टम चेक)\b/i,
+  /\b(?:check|show|get|display|batao|dekho|give me|report)\s+(?:the\s+|my\s+|mera\s+|current\s+|live\s+)?(?:cpu|ram|battery|hardware|telemetry|system)(?:\s+(?:aur|and|,)\s+(?:cpu|ram|battery|hardware|telemetry|system))?\s*(?:usage|utilization|status|metrics|report)?\b/i,
+  /\b(?:cpu|ram|battery|hardware|telemetry)(?:\s+(?:aur|and|,)\s+(?:cpu|ram|battery|hardware|telemetry))?\s*(?:usage|utilization|status|metrics|stats)\s*(?:check|batao|dekho|karo|report|do|de do|bata do)?\b/i,
+  /\b(system kaisa hai|system kaisa chal raha hai|kya chal raha hai)\b/i,
+  /\b(?:system|hardware)\s*(?:telemetry|metrics|stats)\b/i,
+];
+
+// Unified SYSTEM_CONTROL_PATTERNS: handles orb controls and system telemetry safely.
+// Optional whitespace is represented by \s* (zero or more whitespace characters), avoiding literal asterisk matches.
+export const SYSTEM_CONTROL_PATTERNS = [
+  ...ORB_CONTROL_PATTERNS,
+  ...TELEMETRY_PATTERNS,
 ];
 
 const GREETING_PATTERNS = [
@@ -277,10 +399,26 @@ export function routeUserQuery(
     }
   }
 
-  // 3. System diagnostics & Orb UI Controls
-  for (const pattern of SYSTEM_CONTROL_PATTERNS) {
+  // 3a. Direct Orb UI Scene Controls (Independent of telemetry)
+  for (const pattern of ORB_CONTROL_PATTERNS) {
     if (pattern.test(lower)) {
-      if (lower.includes("status") || lower.includes("diagnostic") || lower.includes("cpu") || lower.includes("ram") || lower.includes("battery")) {
+      return {
+        intent: "TOOL_CALL",
+        targetModel: "local-rule",
+        toolRequired: "system_control",
+        toolParams: { action: "reset_view" },
+        confidence: 0.99,
+        reason: "Direct orb scene control",
+      };
+    }
+  }
+
+  // 3b. System diagnostics & Live Telemetry
+  // Exclude conceptual/educational questions (e.g. "what is cpu usage", "explain ram usage", "difference between ram and storage")
+  const isEducationalOrExplanatory = /\b(what is|explain|difference between|how does|how is|why|kyon|kaise kaam|kya hota hai|concept of)\b/i.test(lower);
+  if (!isEducationalOrExplanatory) {
+    for (const pattern of TELEMETRY_PATTERNS) {
+      if (pattern.test(lower)) {
         return {
           intent: "TOOL_CALL",
           targetModel: "local-rule",
@@ -290,14 +428,6 @@ export function routeUserQuery(
           reason: "Live system telemetry and diagnostics request",
         };
       }
-      return {
-        intent: "TOOL_CALL",
-        targetModel: "local-rule",
-        toolRequired: "system_control",
-        toolParams: { action: "reset_view" },
-        confidence: 0.99,
-        reason: "Direct orb scene control",
-      };
     }
   }
 
@@ -366,6 +496,38 @@ export function routeUserQuery(
     };
   }
 
+  // 6b. Windows UI Automation: Discovery and Element Inspection (Phase 3A - Strictly Read-Only)
+  const windowEnumMatch = lower.match(/\b(?:list (?:all\s+|open\s+|active\s+)*windows|what windows are open|show (?:all\s+|active\s+|open\s+)*windows|enumerate windows|kaunse windows khule hain)\b/i);
+  if (windowEnumMatch) {
+    return {
+      intent: "TOOL_CALL",
+      targetModel: "local-rule",
+      toolRequired: "enumerate_windows",
+      toolParams: {},
+      confidence: 0.98,
+      reason: "Native Windows UI Automation window enumeration (Read-Only)",
+    };
+  }
+
+  const windowInspectMatch = lower.match(/\b(?:inspect window|inspect ui|check elements of|window elements|inspect controls of)\s*(.*)/i);
+  if (windowInspectMatch) {
+    const rawTarget = windowInspectMatch[1]?.trim() || "";
+    const params: Record<string, any> = {};
+    if (/^\d+$/.test(rawTarget)) {
+      params.target_pid = parseInt(rawTarget, 10);
+    } else if (rawTarget) {
+      params.window_title = rawTarget;
+    }
+    return {
+      intent: "TOOL_CALL",
+      targetModel: "local-rule",
+      toolRequired: "inspect_window_elements",
+      toolParams: params,
+      confidence: 0.98,
+      reason: "Native Windows UI Automation element tree inspection (Read-Only)",
+    };
+  }
+
   // 7. File search
   const fileSearchMatch = lower.match(/\b(?:search file|find file|dhundo file|locate file|file search)\s+(.+)/i);
   if (fileSearchMatch) {
@@ -389,6 +551,54 @@ export function routeUserQuery(
       toolParams: { query: webSearchMatch[1].trim() },
       confidence: 0.96,
       reason: "Browser research subsystem query",
+    };
+  }
+
+  // 7c. Direct File Read
+  const readFileMatch = lower.match(/\b(?:read file|inspect file|cat file|view file|file padho)\s+([^\s"']+)/i);
+  if (readFileMatch) {
+    return {
+      intent: "TOOL_CALL",
+      targetModel: "local-rule",
+      toolRequired: "read_file",
+      toolParams: { file_path: readFileMatch[1].trim() },
+      confidence: 0.96,
+      reason: "Inspect file contents",
+    };
+  }
+
+  // 7d. Direct File Delete (High-risk confirmation gate)
+  const deleteFileMatch = lower.match(/\b(?:delete file|remove file|hatao file|file delete karo)\s+([^\s"']+)/i);
+  if (deleteFileMatch) {
+    return {
+      intent: "TOOL_CALL",
+      targetModel: "local-rule",
+      toolRequired: "delete_file",
+      toolParams: { file_path: deleteFileMatch[1].trim() },
+      confidence: 0.98,
+      reason: "High-risk file delete requiring cryptographic confirmation gate",
+    };
+  }
+
+  // 7e. Ambiguous destructive action (Missing target)
+  if (/\b(?:delete the file|delete a file|file delete karo|hata do file|delete file)\b/i.test(lower) && !deleteFileMatch) {
+    return {
+      intent: "SYSTEM_LOCAL",
+      targetModel: "local-rule",
+      fastLocalResponse: "Please specify the exact file path or filename you would like to delete, sir.",
+      confidence: 0.95,
+      reason: "Ambiguous command requesting clarification",
+    };
+  }
+
+  // 7f. Offline Architecture explanation in natural Hinglish
+  if (/\b(?:offline kaise kaam karte|how do you work offline|offline architecture|bina internet ke kaise)\b/i.test(lower)) {
+    return {
+      intent: "SYSTEM_LOCAL",
+      targetModel: "local-rule",
+      fastLocalResponse: "ULTRON local-first architecture par operate karta hai, sir. Mera core brain local Ollama (qwen2.5) par execute hota hai, offline voice transcription local Faster-Whisper handle karta hai, aur personal memory local JSON storage mein permanently save hoti hai. Private user data kabhi kisi external cloud server par nahi bheja jata.",
+      confidence: 1.0,
+      reason: "Accurate local-first architecture explanation reflecting actual implementation",
     };
   }
 
@@ -431,9 +641,9 @@ export function routeUserQuery(
     };
   }
 
-  // 11. Complex Reasoning triggers
+  // 11. Complex Reasoning triggers (including educational & conceptual inquiries)
   if (
-    /\b(why|how does|explain|analyze|solve|compare|difference between|write a|code|implement|function|algorithm|python|javascript|typescript|logic|reasoning)\b/i.test(lower) ||
+    /\b(what is|what are|why|how does|how is|explain|analyze|solve|compare|difference between|write a|code|implement|function|algorithm|python|javascript|typescript|logic|reasoning|kya hota hai|concept of)\b/i.test(lower) ||
     /\b(bat and a ball|riddle|puzzle|math|integral|derivative|theorem|quantum|physics|step by step|multi-step)\b/i.test(lower)
   ) {
     return {
