@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="docs/ultron_banner.jpg" alt="ULTRON Neural Core in Stark Lab" width="620px" style="border-radius: 16px; box-shadow: 0 10px 40px rgba(255, 170, 0, 0.35); max-width: 100%;" />
+  <img src="docs/ultron_logo.jpg" alt="ULTRON Neural Core Emblem" width="480px" style="border-radius: 24px; box-shadow: 0 0 55px rgba(255, 170, 0, 0.45); max-width: 100%; background: #000000;" />
 
   <br/><br/>
 
