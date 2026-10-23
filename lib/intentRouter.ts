@@ -1486,6 +1486,21 @@ export const ULTRON_TOOLS: ToolDefinition[] = [
 
   {
 
+    name: "live_world_news",
+    description: "Fetches live, real-time worldwide news from international news sources, opens the live news in a browser tab, and returns a detailed spoken bulletin.",
+    riskLevel: "SAFE",
+    parameters: {
+      category: {
+        type: "string",
+        description: "News category, e.g. 'world', 'tech', 'business'",
+      },
+      open_browser: {
+        type: "boolean",
+        description: "Whether to open the live news tab in browser",
+      },
+    },
+  },
+  {
     name: "browser_control",
 
     description: "Controls Google Chrome or Edge: navigate to URLs, scroll up/down, refresh, switch tabs, new tab, focus, or get page state",
@@ -3199,6 +3214,21 @@ export function routeUserQuery(
   }
 
 
+
+  // Live Worldwide & Breaking News Command (e.g. 'aaj ki world wide news live bol ke bataye', 'world news padho', 'latest news sunao')
+  const liveNewsMatch = lower.match(
+    /\b(?:(?:aaj ki|today(?:'s)?|latest|breaking|live|current)?\s*(?:world\s*wide|world|global|international|desh\s*videsh)?\s*(?:news|khabar|khabrein|samachar|headlines|updates)|news\s+(?:batao|sunao|padho|bolo|read|speak)|world\s*wide\s*news)\b/i
+  );
+  if (liveNewsMatch && !lower.includes("fake news")) {
+    return {
+      intent: "TOOL_CALL",
+      targetModel: "local-rule",
+      toolRequired: "live_world_news",
+      toolParams: { category: "world", open_browser: true },
+      confidence: 0.99,
+      reason: "Live worldwide news briefing and browser tab reading requested",
+    };
+  }
 
   const refreshBrowserMatch = lower.match(/\b(?:refresh|reload|f5)\s*(?:chrome|edge|browser|page|tab)?\b/i);
 

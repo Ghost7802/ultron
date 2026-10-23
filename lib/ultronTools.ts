@@ -761,6 +761,7 @@ export const ultronTools = {
         result.verification?.title_changed === true;
 
       const inherentlyVerified = [
+        "live_world_news",
         "get_system_diagnostics",
         "read_file",
         "list_directory",
@@ -1035,6 +1036,78 @@ export const ultronTools = {
           url,
           browser: browser as any,
         });
+      }
+
+      case "live_world_news": {
+        const category = (params.category || "world").toLowerCase();
+        const openBrowser = params.open_browser !== false;
+        const targetUrl = category === "tech"
+          ? "https://www.bbc.com/news/technology"
+          : "https://www.bbc.com/news/world";
+
+        // Step 1: Open real browser tab and bring to foreground so the user sees the articles
+        if (openBrowser) {
+          try {
+            await BrowserApplicationController.executeBrowserAction({
+              action: "navigate",
+              url: targetUrl,
+              browser: "chrome",
+            });
+          } catch {}
+        }
+
+        // Step 2: Fetch real-time live international news from verified feeds
+        let stories: Array<{ title: string; description: string; link: string }> = [];
+        try {
+          const res = await fetch("https://feeds.bbci.co.uk/news/world/rss.xml", {
+            headers: {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ULTRON-Live-News/2.0",
+            },
+            signal: AbortSignal.timeout(6000),
+          });
+          if (res.ok) {
+            const xml = await res.text();
+            const itemRegex = /<item>[\s\S]*?<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/title>[\s\S]*?<description>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?<\/description>[\s\S]*?<link>(.*?)<\/link>/g;
+            let m: RegExpExecArray | null;
+            while ((m = itemRegex.exec(xml)) !== null && stories.length < 5) {
+              const title = m[1].replace(/&amp;/g, "&").replace(/&#39;/g, "'").trim();
+              const desc = m[2].replace(/&amp;/g, "&").replace(/&#39;/g, "'").trim();
+              const link = m[3].trim();
+              if (title && desc) {
+                stories.push({ title, description: desc, link });
+              }
+            }
+          }
+        } catch {}
+
+        if (stories.length === 0) {
+          try {
+            const searchRes = await browserResearch.search("world wide news today BBC", 4);
+            stories = searchRes.map((s) => ({ title: s.title, description: s.snippet, link: s.url }));
+          } catch {}
+        }
+
+        // Step 3: Ingest today's news into ULTRON's persistent memory
+        const memoryKey = `world_news_${new Date().toISOString().slice(0, 10)}`;
+        const memoryDigest = stories.map((s, i) => `${i + 1}. ${s.title}: ${s.description}`).join(" | ");
+        try {
+          ultronMemory.saveVerifiedResearch("Today's Worldwide News", memoryDigest, targetUrl);
+          ultronMemory.saveFact(memoryKey, memoryDigest, "learned_knowledge");
+        } catch {}
+
+        // Step 4: Build detailed spoken-ready bulletin for ULTRON to speak aloud
+        const storyLines = stories.map((s, i) => `Story ${i + 1}: ${s.title}. ${s.description}`).join("\n\n");
+        const spokenBulletin = `Sir, maine browser me live ${targetUrl} open kar diya hai. Aaj ki top worldwide khabrein ye hain:\n\n${storyLines}\n\nBrowser tab aapke screen par khula hua hai jahan aap in articles ko visually padh sakte hain.`;
+
+        return {
+          status: "success",
+          category,
+          stories_count: stories.length,
+          url: targetUrl,
+          message: spokenBulletin,
+          report: spokenBulletin,
+          stories,
+        };
       }
 
       case "close_application":

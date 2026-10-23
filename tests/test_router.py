@@ -56,6 +56,7 @@ def test_targeted_system_control_and_telemetry():
         ("Explain how RAM usage is calculated", "COMPLEX_REASONING", None, "qwen2.5:1.5b"),
         ("What is the difference between RAM and storage?", "COMPLEX_REASONING", None, "qwen2.5:1.5b"),
         ("Reset orb", "TOOL_CALL", "system_control", "local-rule"),
+        ("aaj ki world wide news live bol ke bataye", "TOOL_CALL", "live_world_news", "local-rule"),
     ]
 
     # 1. Test directly against actual TypeScript intent router (lib/intentRouter.ts) via Node
@@ -108,6 +109,8 @@ console.log(JSON.stringify(res));
         lower = text.lower()
         if orb_pattern.search(lower):
             return "TOOL_CALL", "system_control"
+        if re.search(r"\b(?:world\s*wide\s*news|news\s+(?:batao|sunao|padho|bolo|read|speak))\b", lower):
+            return "TOOL_CALL", "live_world_news"
         if not educational_pattern.search(lower):
             for pat in telemetry_patterns:
                 if pat.search(lower):
