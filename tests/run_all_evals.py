@@ -14,6 +14,10 @@ TESTS = [
     "tests/test_computer_control.py",
     "tests/test_agent_planner.py",
     "tests/test_ui_automation.py",
+    "tests/test_desktop_control.py",
+    "tests/test_voice_browser_vision.py",
+    "tests/test_hallucination.py",
+    "tests/test_tool_calling.py",
 ]
 
 def main():

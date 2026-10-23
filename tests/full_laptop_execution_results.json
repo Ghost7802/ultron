@@ -1,0 +1,41 @@
+{
+  "dynamic_app_resolution": {
+    "chrome": true,
+    "notepad": true,
+    "edge": true
+  },
+  "screen_capture": {
+    "status": "success",
+    "mode": "real_desktop_gdi",
+    "size_bytes": 136156
+  },
+  "screen_analysis": {
+    "status": "success",
+    "resolution": "1280x720"
+  },
+  "browser_focus": {
+    "status": "success",
+    "title": "Google Chrome",
+    "pid": 13648,
+    "hwnd": 198432
+  },
+  "browser_navigation": {
+    "status": "success",
+    "url": "https://news.ycombinator.com",
+    "initial_title": "Google Chrome",
+    "final_title": "Google Chrome",
+    "title_verified": false
+  },
+  "browser_scroll": {
+    "down": "success",
+    "up": "success"
+  },
+  "browser_refresh": {
+    "status": "success"
+  },
+  "launch_existing_app": {
+    "status": "success",
+    "action": "focused_existing",
+    "pid": 13648
+  }
+}

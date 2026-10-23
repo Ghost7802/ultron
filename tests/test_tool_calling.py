@@ -82,7 +82,7 @@ def query_tool_model(model: str, user_prompt: str, max_tokens: int = 64) -> str:
         headers={"Content-Type": "application/json"}
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=60) as resp:
             data = json.loads(resp.read().decode("utf-8"))
             return data.get("message", {}).get("content", "").strip()
     except Exception as e:

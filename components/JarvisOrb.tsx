@@ -1,3 +1,20 @@
+/**
+ * @file components/JarvisOrb.tsx
+ * @description Primary client-side UI component hosting the 3D Holographic HUD, Web Audio VAD,
+ * microphone recording, speech synthesis playback, gesture recognition, and status overlays.
+ * 
+ * Subsystem:
+ * Holographic Frontend & Multimodal Interaction Manager.
+ * 
+ * Key Responsibilities:
+ * - Mounts Three.js canvas and manages lifecycle of the 3D orb particle scene.
+ * - Manages Web Audio API pipeline: AudioContext, AnalyserNode, RMS volume calculation, and VAD.
+ * - Handles live speech recording, sub-second streaming STT dispatch, and TTS speech playback.
+ * - Implements full-duplex barge-in interruption (silencing output when user speaks).
+ * - Integrates webcam hand tracking gestures (pinch, rotate, open-palm repel).
+ * - Displays active agent execution plans, token streaming, and system telemetry HUD badges.
+ */
+
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -79,6 +96,8 @@ export default function JarvisOrb() {
   const animFrameRef = useRef<number | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const speechRecognitionRef = useRef<any>(null);
+  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
+  const startVoiceSystemRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -108,6 +127,14 @@ export default function JarvisOrb() {
     if (typeof window !== "undefined" && "speechSynthesis" in window) {
       window.speechSynthesis.cancel();
     }
+    if (activeAudioRef.current) {
+      try {
+        activeAudioRef.current.pause();
+        activeAudioRef.current.src = "";
+      } catch {}
+      activeAudioRef.current = null;
+    }
+    void fetch("/api/tts", { method: "DELETE" }).catch(() => {});
     if (speechRecognitionRef.current) {
       try {
         speechRecognitionRef.current.abort();
@@ -147,58 +174,97 @@ export default function JarvisOrb() {
     updateVisualState("speaking", { audioLevel: 0.7 });
     setVoiceLabel("SPEAKING…");
 
-    const utterance = new SpeechSynthesisUtterance(sentence);
-    utterance.rate = 1.05;
-    utterance.pitch = 1.0;
-
-    const voices = window.speechSynthesis.getVoices();
-    const preferredVoice =
-      voices.find((v) => v.lang === "en-IN" || v.lang.includes("en-IN")) ||
-      voices.find((v) => v.name.toLowerCase().includes("ravi") || v.name.toLowerCase().includes("neerja") || v.name.toLowerCase().includes("david")) ||
-      voices.find((v) => v.lang.startsWith("en-US") || v.lang.startsWith("en-GB")) ||
-      voices.find((v) => v.lang.startsWith("hi"));
-    if (preferredVoice) utterance.voice = preferredVoice;
-
-    let finished = false;
-    // Watchdog timer: prevents speech synthesis from permanently freezing on Chromium
-    const watchdogDuration = Math.max(3000, sentence.length * 110);
-    const watchdog = setTimeout(() => {
-      if (!finished && isSpeakingRef.current) {
-        console.warn("[ULTRON TTS] Watchdog fired for speech chunk, moving to next.");
-        finished = true;
+    const playFallback = () => {
+      if (typeof window === "undefined" || !("speechSynthesis" in window)) {
         playNextSentence();
+        return;
       }
-    }, watchdogDuration);
+      const utterance = new SpeechSynthesisUtterance(sentence);
+      utterance.rate = 1.05;
+      utterance.pitch = 1.0;
 
-    utterance.onend = () => {
-      if (!finished) {
-        finished = true;
-        clearTimeout(watchdog);
-        playNextSentence();
-      }
-    };
+      const voices = window.speechSynthesis.getVoices();
+      const preferredVoice =
+        voices.find((v) => v.lang === "en-IN" || v.lang.includes("en-IN")) ||
+        voices.find((v) => v.name.toLowerCase().includes("ravi") || v.name.toLowerCase().includes("neerja") || v.name.toLowerCase().includes("david")) ||
+        voices.find((v) => v.lang.startsWith("en-US") || v.lang.startsWith("en-GB")) ||
+        voices.find((v) => v.lang.startsWith("hi"));
+      if (preferredVoice) utterance.voice = preferredVoice;
 
-    utterance.onerror = (e) => {
-      if (!finished) {
-        finished = true;
-        clearTimeout(watchdog);
-        if (e.error !== "canceled" && e.error !== "interrupted") {
-          console.warn("Speech playback error:", e.error);
+      let finished = false;
+      const watchdogDuration = Math.max(3000, sentence.length * 110);
+      const watchdog = setTimeout(() => {
+        if (!finished && isSpeakingRef.current) {
+          finished = true;
+          playNextSentence();
         }
+      }, watchdogDuration);
+
+      utterance.onend = () => {
+        if (!finished) {
+          finished = true;
+          clearTimeout(watchdog);
+          playNextSentence();
+        }
+      };
+
+      utterance.onerror = (e) => {
+        if (!finished) {
+          finished = true;
+          clearTimeout(watchdog);
+          playNextSentence();
+        }
+      };
+
+      try {
+        if (window.speechSynthesis.paused) {
+          window.speechSynthesis.resume();
+        }
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        finished = true;
+        clearTimeout(watchdog);
         playNextSentence();
       }
     };
 
-    try {
-      if (window.speechSynthesis.paused) {
-        window.speechSynthesis.resume();
+    // Attempt offline Piper Neural TTS synthesis first
+    (async () => {
+      let playedNeural = false;
+      try {
+        const res = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: sentence }),
+          signal: AbortSignal.timeout(6000),
+        });
+        if (res.ok && res.headers.get("content-type")?.includes("audio/wav")) {
+          const blob = await res.blob();
+          if (blob.size > 200 && isSpeakingRef.current) {
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+            activeAudioRef.current = audio;
+            audio.onended = () => {
+              URL.revokeObjectURL(url);
+              activeAudioRef.current = null;
+              playNextSentence();
+            };
+            audio.onerror = () => {
+              URL.revokeObjectURL(url);
+              activeAudioRef.current = null;
+              playFallback();
+            };
+            await audio.play();
+            playedNeural = true;
+            return;
+          }
+        }
+      } catch {}
+
+      if (!playedNeural && isSpeakingRef.current) {
+        playFallback();
       }
-      window.speechSynthesis.speak(utterance);
-    } catch {
-      finished = true;
-      clearTimeout(watchdog);
-      playNextSentence();
-    }
+    })();
   }, [updateVisualState]);
 
   const queueSpeechChunk = useCallback(
@@ -350,6 +416,7 @@ export default function JarvisOrb() {
 
   const startVoiceSystem = async () => {
     const sessionId = ++voiceSessionRef.current;
+    startVoiceSystemRef.current = startVoiceSystem;
     try {
       setError(null);
       if (!navigator.mediaDevices?.getUserMedia || !("MediaRecorder" in window)) {
@@ -831,6 +898,46 @@ export default function JarvisOrb() {
       }
     }
   };
+
+  // Hands-free offline wake-word listener (Hey Jarvis / ULTRON)
+  useEffect(() => {
+    startVoiceSystemRef.current = startVoiceSystem;
+    let unmounted = false;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const checkWakeWord = async () => {
+      if (unmounted) return;
+      if (!isSpeakingRef.current && !isProcessingRef.current && !isChatBusyRef.current) {
+        try {
+          const res = await fetch("/api/wakeword", { cache: "no-store", signal: AbortSignal.timeout(1500) });
+          if (res.ok) {
+            const data = await res.json();
+            if (data?.event && data.event.type === "WAKE_WORD_DETECTED") {
+              console.info("[ULTRON WAKEWORD] Hands-free wake phrase triggered!", data.event);
+              if (!voiceActiveRef.current) {
+                voiceActiveRef.current = true;
+                setVoiceActive(true);
+                setVoiceLabel("LISTENING…");
+                updateVisualState("listening");
+                if (startVoiceSystemRef.current) {
+                  void startVoiceSystemRef.current();
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+      if (!unmounted) {
+        pollTimer = setTimeout(checkWakeWord, 600);
+      }
+    };
+
+    pollTimer = setTimeout(checkWakeWord, 1500);
+    return () => {
+      unmounted = true;
+      if (pollTimer) clearTimeout(pollTimer);
+    };
+  }, [updateVisualState]);
 
   const toggleVoice = () => {
     setError(null);

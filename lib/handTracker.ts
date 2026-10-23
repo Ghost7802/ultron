@@ -1,12 +1,32 @@
+/**
+ * @file lib/handTracker.ts
+ * @description Real-time webcam hand tracking & gesture recognition using MediaPipe Vision.
+ * 
+ * Subsystem:
+ * Holographic Visual Perception & Gesture Interaction Core.
+ * 
+ * Responsibilities:
+ * - Initializes MediaPipe HandLandmarker with local WASM binaries and offline fallback.
+ * - Tracks 21 3D hand landmarks from webcam video frames.
+ * - Detects interaction gestures: Pinch (drag/rotate), Open Palm, and Closed Fist.
+ * - Maps normalized coordinates to 3D Three.js orb Euler rotations with smoothing.
+ * 
+ * Safety & Privacy:
+ * - Video frames are processed 100% locally in browser memory via WebAssembly; no frames leave the host.
+ */
+
 import {
   FilesetResolver,
   HandLandmarker,
   type NormalizedLandmark,
 } from "@mediapipe/tasks-vision";
 
-const WASM_CDN =
+// Local WASM and model asset paths for offline inference
+const LOCAL_WASM_PATH = "/wasm";
+const LOCAL_MODEL_PATH = "/models/hand_landmarker.task";
+const FALLBACK_WASM_CDN =
   "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
-const MODEL_URL =
+const FALLBACK_MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
 
 // Landmark indices (MediaPipe hand model)
@@ -80,39 +100,62 @@ export class HandTracker {
     let initialStream: MediaStream | null = null;
     let selectedDeviceId: string | null = null;
 
+    const isVirtualOrPhone = (label: string) =>
+      /virtual|phone|link\s*to\s*windows|droid|iriun|camo|epoccam|obs|vcam|remote|connected\s*device|galaxy|pixel|oneplus|xiaomi|redmi|oppo|vivo|android/i.test(label);
+
+    const isLaptopHardware = (label: string) =>
+      /integrated|internal|built-in|front|laptop|webcam|camera|hp|lenovo|dell|acer|asus|chicony|sunplus|realtek|bison|intel/i.test(label) &&
+      !isVirtualOrPhone(label);
+
     try {
-      // 1. Initial getUserMedia to ensure permission is granted and device labels are unlocked
+      // 1. Check if we already have a saved laptop camera deviceId in localStorage
+      const savedCameraId = typeof window !== "undefined" ? localStorage.getItem("ultron_laptop_camera_id") : null;
+
+      // 2. Enumerate existing devices before opening stream
+      const initialDevices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+      const videoDevices = initialDevices.filter((d) => d.kind === "videoinput");
+      const hasLabels = videoDevices.some((d) => Boolean(d.label));
+
+      if (hasLabels) {
+        // Find best physical laptop camera directly
+        const laptopCam = videoDevices.find((d) => isLaptopHardware(d.label));
+        const nonVirtualCam = videoDevices.find((d) => !isVirtualOrPhone(d.label));
+        const bestCam = laptopCam || nonVirtualCam;
+        if (bestCam && bestCam.deviceId) {
+          selectedDeviceId = bestCam.deviceId;
+          if (typeof window !== "undefined") {
+            localStorage.setItem("ultron_laptop_camera_id", bestCam.deviceId);
+          }
+        }
+      } else if (savedCameraId && videoDevices.some((d) => d.deviceId === savedCameraId)) {
+        selectedDeviceId = savedCameraId;
+      }
+
+      // 3. Open media stream requesting strictly user-facing laptop camera or exact hardware ID
+      const initialConstraints: MediaTrackConstraints = selectedDeviceId
+        ? { deviceId: { exact: selectedDeviceId }, width: 640, height: 480 }
+        : { facingMode: "user", width: 640, height: 480 };
+
       initialStream = await navigator.mediaDevices.getUserMedia({
-        video: true,
+        video: initialConstraints,
         audio: false,
       });
 
-      // 2. Enumerate all cameras with now-unlocked device labels
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter((d) => d.kind === "videoinput");
+      // 4. Re-check labels now that permission has been granted
+      const activeTrack = initialStream.getVideoTracks()[0];
+      const activeLabel = activeTrack?.label || "";
 
-      const isVirtualOrPhone = (label: string) =>
-        /virtual|phone|link|droid|iriun|camo|epoccam|obs virtual|vcam/i.test(label);
+      // If Windows assigned a virtual/phone camera, immediately find and switch to laptop hardware
+      if (isVirtualOrPhone(activeLabel) || !selectedDeviceId) {
+        const freshDevices = await navigator.mediaDevices.enumerateDevices();
+        const freshVideo = freshDevices.filter((d) => d.kind === "videoinput");
+        const realLaptopCam = freshVideo.find((d) => isLaptopHardware(d.label)) || freshVideo.find((d) => !isVirtualOrPhone(d.label));
 
-      const isLaptopHardware = (label: string) =>
-        /hp|integrated|internal|built-in|front|laptop|webcam|chicony|sunplus|realtek/i.test(label) &&
-        !isVirtualOrPhone(label);
-
-      // Priority 1: Physical laptop integrated camera (e.g. "HP HD Camera")
-      const laptopCam = videoDevices.find((d) => isLaptopHardware(d.label));
-      // Priority 2: Any non-virtual camera
-      const nonVirtualCam = videoDevices.find((d) => !isVirtualOrPhone(d.label));
-
-      const bestCam = laptopCam || nonVirtualCam;
-
-      // If the currently granted camera track isn't our preferred laptop camera, switch to it
-      const currentTrack = initialStream.getVideoTracks()[0];
-      const currentLabel = currentTrack?.label || "";
-
-      if (bestCam && bestCam.deviceId) {
-        if (isVirtualOrPhone(currentLabel) || (laptopCam && bestCam.deviceId !== currentTrack?.getSettings()?.deviceId)) {
-          selectedDeviceId = bestCam.deviceId;
-          // Stop initial track before opening targeted track
+        if (realLaptopCam && realLaptopCam.deviceId && realLaptopCam.deviceId !== activeTrack?.getSettings()?.deviceId) {
+          selectedDeviceId = realLaptopCam.deviceId;
+          if (typeof window !== "undefined") {
+            localStorage.setItem("ultron_laptop_camera_id", realLaptopCam.deviceId);
+          }
           initialStream.getTracks().forEach((t) => t.stop());
           initialStream = null;
         }
@@ -137,23 +180,40 @@ export class HandTracker {
     this.video.srcObject = this.stream;
     await this.video.play();
 
-    const fileset = await FilesetResolver.forVisionTasks(WASM_CDN);
-    const options = {
-      baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" as const },
-      runningMode: "VIDEO" as const,
-      numHands: 2,
-      minHandDetectionConfidence: 0.4,
-      minHandPresenceConfidence: 0.4,
-      minTrackingConfidence: 0.4,
-    };
+    let fileset: any;
     try {
-      this.landmarker = await HandLandmarker.createFromOptions(fileset, options);
-    } catch {
-      // Some browsers/GPUs reject the GPU delegate — fall back to CPU
-      this.landmarker = await HandLandmarker.createFromOptions(fileset, {
-        ...options,
-        baseOptions: { ...options.baseOptions, delegate: "CPU" as const },
+      // Offline-first: load local bundled WASM files
+      fileset = await FilesetResolver.forVisionTasks(LOCAL_WASM_PATH);
+    } catch (wasmErr) {
+      console.warn("[HandTracker] Local WASM failed, falling back to CDN:", wasmErr);
+      fileset = await FilesetResolver.forVisionTasks(FALLBACK_WASM_CDN);
+    }
+
+    const tryCreate = async (modelPath: string, delegate: "GPU" | "CPU") => {
+      return await HandLandmarker.createFromOptions(fileset, {
+        baseOptions: { modelAssetPath: modelPath, delegate },
+        runningMode: "VIDEO",
+        numHands: 2,
+        minHandDetectionConfidence: 0.4,
+        minHandPresenceConfidence: 0.4,
+        minTrackingConfidence: 0.4,
       });
+    };
+
+    try {
+      // Offline-first: load local bundled hand landmarker task model
+      this.landmarker = await tryCreate(LOCAL_MODEL_PATH, "GPU");
+    } catch {
+      try {
+        this.landmarker = await tryCreate(LOCAL_MODEL_PATH, "CPU");
+      } catch (localModelErr) {
+        console.warn("[HandTracker] Local model failed, falling back to CDN:", localModelErr);
+        try {
+          this.landmarker = await tryCreate(FALLBACK_MODEL_URL, "GPU");
+        } catch {
+          this.landmarker = await tryCreate(FALLBACK_MODEL_URL, "CPU");
+        }
+      }
     }
 
     this.running = true;

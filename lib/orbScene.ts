@@ -1,3 +1,19 @@
+/**
+ * @file lib/orbScene.ts
+ * @description Holographic 3D Three.js particle visualizer & shaders for ULTRON.
+ * 
+ * Subsystem:
+ * Holographic 3D HUD & Shader Rendering Pipeline.
+ * 
+ * Key Responsibilities:
+ * - Constructs GPU-accelerated particle system with concentric crystalline shell rings.
+ * - Reactive state machine rendering 7 assistant visual states:
+ *   (idle, listening, thinking, executing, speaking, error, gesture).
+ * - Multi-pass postprocessing pipeline featuring UnrealBloomPass for cinematic glow and Chromatic Aberration.
+ * - Audio-reactive vertex displacement responding to live microphone/TTS decibel levels.
+ * - Camera management with orbital controls, programmatic gestures, and auto-rotation.
+ */
+
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";

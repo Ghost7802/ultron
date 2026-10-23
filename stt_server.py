@@ -1,3 +1,20 @@
+"""
+ULTRON High-Performance Local Speech-to-Text & Voice Microservice.
+
+Subsystem:
+Python Backend Audio Core running on http://127.0.0.1:5001.
+
+Key Responsibilities:
+- Hosts lightweight, high-performance Faster-Whisper (INT8 quantized) for speech recognition.
+- Provides REST endpoints:
+    /transcribe       -> Converts user WAV/WebM audio buffer into text.
+    /tts/synthesize   -> Synthesizes neural voice audio via Piper ONNX.
+    /tts/stop         -> Immediately silences audio playback for barge-in interruptions.
+    /wakeword/poll    -> Relays live wake-word events ("Hey Jarvis") to the frontend.
+    /health           -> Reports operational readiness and subsystem statuses.
+- Runs multi-threaded request handlers with zero cloud dependencies.
+"""
+
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 import json
@@ -15,6 +32,7 @@ from faster_whisper import WhisperModel
 from ultron_memory import UltronMemory
 from ultron_tools import ToolRegistry
 from ultron_planner import UltronPlanner
+from ultron_voice_core import UltronWakeWord, UltronNeuralTTS
 
 for output_stream in (sys.stdout, sys.stderr):
     if hasattr(output_stream, "reconfigure"):
@@ -29,6 +47,23 @@ except Exception as e:
     sys.exit(1)
 
 model_lock = threading.Lock()
+
+# Initialize offline wake-word listener
+wake_word_engine = None
+try:
+    wake_word_engine = UltronWakeWord()
+    wake_word_engine.start()
+    print("[ULTRON BACKEND] Wake-word listener active (phrase: 'Hey Jarvis')", flush=True)
+except Exception as e:
+    print(f"[ULTRON BACKEND WARNING] Wake-word listener deferred: {e}", flush=True)
+
+# Initialize offline neural TTS engine
+tts_engine = None
+try:
+    tts_engine = UltronNeuralTTS()
+    print("[ULTRON BACKEND] Offline Piper neural TTS engine ready", flush=True)
+except Exception as e:
+    print(f"[ULTRON BACKEND WARNING] Offline neural TTS deferred: {e}", flush=True)
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
@@ -52,7 +87,24 @@ class STTHandler(BaseHTTPRequestHandler):
                 'model': 'whisper-tiny',
                 'tools_active': True,
                 'memory_active': True,
+                'wakeword_active': wake_word_engine.running if wake_word_engine else False,
+                'tts_active': tts_engine is not None,
             })
+            return
+
+        elif path == '/wakeword/poll':
+            evt = wake_word_engine.poll_event() if wake_word_engine else None
+            self.respond_json({'status': 'ok', 'event': evt})
+            return
+
+        elif path == '/wakeword/status':
+            st = wake_word_engine.get_status() if wake_word_engine else {'running': False}
+            self.respond_json({'status': 'ok', 'wakeword': st})
+            return
+
+        elif path == '/tts/status':
+            is_speaking = tts_engine.is_speaking if tts_engine else False
+            self.respond_json({'status': 'ok', 'is_speaking': is_speaking})
             return
 
         elif path == '/system/diagnostics':
@@ -126,6 +178,33 @@ class STTHandler(BaseHTTPRequestHandler):
             self.respond_json({'text': text})
             return
 
+        # Dedicated TTS Synthesis & Control endpoints
+        if path == '/tts/synthesize':
+            content_length = int(self.headers.get('Content-Length', 0))
+            raw_data = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else '{}'
+            try:
+                body_json = json.loads(raw_data)
+                text = body_json.get('text', '')
+            except Exception:
+                text = raw_data
+            if not text:
+                self.respond_json({'error': 'text parameter is required'}, status=400)
+                return
+            if not tts_engine:
+                self.respond_json({'error': 'TTS engine unavailable'}, status=503)
+                return
+            try:
+                wav_bytes = tts_engine.synthesize_wav_bytes(text)
+                self.send_response(200)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Content-Type', 'audio/wav')
+                self.send_header('Content-Length', str(len(wav_bytes)))
+                self.end_headers()
+                self.wfile.write(wav_bytes)
+            except Exception as e:
+                self.respond_json({'error': f'TTS synthesis failed: {e}'}, status=500)
+            return
+
         # Read JSON body for API endpoints
         content_length = int(self.headers.get('Content-Length', 0))
         body = {}
@@ -188,12 +267,50 @@ class STTHandler(BaseHTTPRequestHandler):
             self.respond_json({'status': 'recorded'})
             return
 
+        # Voice Core: TTS direct playback & Barge-in controls
+        if path == '/tts/speak':
+            text = body.get('text', '')
+            if not text:
+                self.respond_json({'error': 'text is required'}, status=400)
+                return
+            if not tts_engine:
+                self.respond_json({'error': 'TTS engine unavailable'}, status=503)
+                return
+            if wake_word_engine:
+                wake_word_engine.set_suppressed(True)
+            def _on_done():
+                if wake_word_engine:
+                    wake_word_engine.set_suppressed(False)
+            tts_engine.speak(text, on_done=_on_done)
+            self.respond_json({'status': 'speaking', 'text': text})
+            return
+
+        elif path == '/tts/stop':
+            if tts_engine:
+                tts_engine.stop()
+            if wake_word_engine:
+                wake_word_engine.set_suppressed(False)
+            self.respond_json({'status': 'stopped'})
+            return
+
+        elif path == '/wakeword/control':
+            action = body.get('action', 'status')
+            if not wake_word_engine:
+                self.respond_json({'error': 'Wakeword engine unavailable'}, status=503)
+                return
+            if action == 'start':
+                wake_word_engine.start()
+            elif action == 'stop':
+                wake_word_engine.stop()
+            self.respond_json(wake_word_engine.get_status())
+            return
+
         # 3. Dedicated Tool Execution endpoint
         elif path == '/tools/execute':
             tool_name = body.get('tool')
             params = body.get('params', {})
             confirm_token = body.get('confirm_token')
-            auto_confirm = body.get('auto_confirm', True)
+            auto_confirm = body.get('auto_confirm', False)
 
             if tool_name == 'system_diagnostics':
                 self.respond_json(ToolRegistry.get_system_diagnostics())
@@ -222,6 +339,14 @@ class STTHandler(BaseHTTPRequestHandler):
                 cmd = params.get('command', '')
                 cwd = params.get('cwd')
                 self.respond_json(ToolRegistry.run_developer_command(cmd, cwd))
+            elif tool_name == 'capture_screen':
+                self.respond_json(ToolRegistry.capture_screen(params.get('target_window'), params.get('max_width', 1280)))
+            elif tool_name == 'analyze_screen':
+                self.respond_json(ToolRegistry.analyze_screen(params.get('query', 'Describe what is currently visible on the screen.')))
+            elif tool_name == 'web_search':
+                self.respond_json(ToolRegistry.web_search(params.get('query', '')))
+            elif tool_name == 'fetch_web_page':
+                self.respond_json(ToolRegistry.fetch_web_page(params.get('url', '')))
             else:
                 self.respond_json({'error': f'Unknown tool: {tool_name}'}, status=400)
             return

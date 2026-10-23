@@ -1,0 +1,9 @@
+# ULTRON AI Development & Commenting Guidelines
+# Reference: See AGENTS.md for complete details.
+
+- All new or modified source files MUST include a clear file-level docstring/header explaining purpose, dependencies, and role.
+- All classes, methods, and functions MUST include beginner-friendly parameter, return value, and side-effect documentation (JSDoc for TS, docstrings for Python).
+- Complex logic, regex patterns, security gates, and system API calls MUST include explanatory inline comments explaining *why* decisions were made.
+- Do not add trivial/redundant comments that merely repeat code syntax.
+- Maintain existing comments and ensure comments stay synchronized with code changes.
+- Never alter executable logic during documentation updates.

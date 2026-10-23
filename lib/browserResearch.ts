@@ -1,8 +1,13 @@
 /**
- * ULTRON Browser Research Subsystem
- * Provides multi-source web search simulation/retrieval, URL content fetching,
- * HTML sanitization, script stripping, and source-attributed synthesis.
+ * ULTRON Browser Research Subsystem.
+ * Retrieves and sanitizes web content, optionally rendering pages in headless Edge.
+ * Used by the agent tools; dynamic browser paths are resolved at runtime, and
+ * page fetching accepts only HTTP(S) URLs before using the standard fetch fallback.
  */
+
+import fs from "fs";
+import path from "path";
+import { spawn } from "child_process";
 
 export interface SearchResultItem {
   title: string;
@@ -148,5 +153,75 @@ export const browserResearch = {
         url,
       };
     }
+  },
+
+  /**
+   * Dynamically renders and extracts web page content using headless Edge browser automation
+   * with automatic fallback to standard HTTP retrieval.
+   */
+  async fetchDynamicPage(url: string, maxLength: number = 3000): Promise<{ title: string; content: string; url: string; isDynamic: boolean }> {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        throw new Error("Invalid protocol. Only HTTP and HTTPS are permitted.");
+      }
+
+      // 1. Attempt Headless Edge dump-dom (renders dynamic client-side JS)
+      const windowsRoot = path.parse(process.cwd()).root;
+      const programFilesX86 = process.env["ProgramFiles(x86)"] || path.join(windowsRoot, "Program Files (x86)");
+      const programFiles = process.env.ProgramFiles || path.join(windowsRoot, "Program Files");
+      const edgePath = [
+        path.join(programFilesX86, "Microsoft", "Edge", "Application", "msedge.exe"),
+        path.join(programFiles, "Microsoft", "Edge", "Application", "msedge.exe"),
+      ].find((candidate) => fs.existsSync(candidate));
+      if (edgePath) {
+        try {
+          const dom = await new Promise<string>((resolve, reject) => {
+            const edgeProc = spawn(edgePath, [
+              "--headless",
+              "--disable-gpu",
+              "--dump-dom",
+              url,
+            ]);
+            let out = "";
+            let err = "";
+            edgeProc.stdout.on("data", (d) => { out += d.toString(); });
+            edgeProc.stderr.on("data", (d) => { err += d.toString(); });
+            const timer = setTimeout(() => {
+              try { edgeProc.kill(); } catch {}
+              reject(new Error("Headless browser timeout"));
+            }, 9000);
+            edgeProc.on("close", (code) => {
+              clearTimeout(timer);
+              if (out.trim().length > 100) {
+                resolve(out);
+              } else {
+                reject(new Error(err || `Edge exited with code ${code}`));
+              }
+            });
+          });
+
+          const clean = sanitizeHtml(dom);
+          const titleMatch = dom.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+          const title = titleMatch ? sanitizeHtml(titleMatch[1]) : parsed.hostname;
+
+          return {
+            title,
+            content: clean.slice(0, maxLength),
+            url,
+            isDynamic: true,
+          };
+        } catch {
+          // Fall through to standard fetch
+        }
+      }
+    } catch {}
+
+    // Fallback: standard sanitized fetch
+    const fallback = await this.fetchPageText(url, maxLength);
+    return {
+      ...fallback,
+      isDynamic: false,
+    };
   },
 };

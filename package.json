@@ -6,7 +6,7 @@
     "dev": "next dev -p 3000 -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "eslint ."
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.35",
@@ -16,10 +16,14 @@
     "three": "^0.185.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^24",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/three": "^0.185.0",
-    "typescript": "^5"
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
+    "typescript": "^5",
+    "typescript-eslint": "^8.72.0"
   }
 }

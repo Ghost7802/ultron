@@ -16,8 +16,11 @@ __pycache__/
 # misc
 .DS_Store
 *.pem
+*.bak
+*.tmp
 
 # debug
+scratch/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

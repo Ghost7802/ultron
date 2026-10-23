@@ -98,6 +98,16 @@ def test_phase1_real_tools_engine():
         'const ultronUIAutomation = { enumerateWindows: async () => ({ status: "success", count: 1, windows: [] }), inspectWindowElements: async () => ({ status: "success", element_count: 1, elements: [] }) };',
         tools_code
     )
+    tools_code = re.sub(
+        r'import\s*\{[^}]*\}\s*from\s*["\']\./projectContext["\'];?',
+        'const ProjectContextManager = { getProjectState: () => ({ decisions: [] }), recordDecision: (t, r) => ({ id: "DEC-1", title: t, rationale: r }) };',
+        tools_code
+    )
+    tools_code = re.sub(
+        r'import\s*\{[^}]*\}\s*from\s*["\']\./proactiveMonitor["\'];?',
+        'const ProactiveProjectMonitor = { scanForOpportunities: async () => [], getInitiativeLevel: () => "balanced" };',
+        tools_code
+    )
 
     runner_code = tools_code + """
 

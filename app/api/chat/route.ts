@@ -1,9 +1,32 @@
+/**
+ * @file app/api/chat/route.ts
+ * @description Core conversational and agent orchestration endpoint for ULTRON.
+ * 
+ * Subsystem:
+ * Central Gateway / Hybrid Dual-Brain Router & Agent Controller.
+ * 
+ * Key Responsibilities:
+ * - Request validation & conversation history length enforcement.
+ * - Intent routing via `routeUserQuery` (0ms local rules, direct tool calls, 5-layer memory ops, dynamic agent loops).
+ * - Multi-turn memory injection (`ultronMemory`) and dynamic preference extraction.
+ * - Local Ollama invocation (`qwen2.5:1.5b` / `qwen2.5:0.5b`) with streaming SSE response generation.
+ * - Zero-latency offline deterministic fallback when local LLM server is unavailable.
+ * 
+ * Safety & Security Guarantees:
+ * - Strictly local execution (0% cloud leakage; 127.0.0.1 boundaries).
+ * - Confirmation token verification for privileged actions (e.g. destructive file deletes).
+ * - Strict input length sanitization preventing memory exhaustion attacks.
+ */
+
 import { NextResponse } from "next/server";
 import { routeUserQuery, ULTRON_TOOLS, type RouteDecision } from "@/lib/intentRouter";
 import { ultronMemory } from "@/lib/ultronMemory";
 import { ultronTools } from "@/lib/ultronTools";
 import { ultronPlanner } from "@/lib/ultronPlanner";
 import { ultronAgentEngine } from "@/lib/ultronAgentEngine";
+import { CompanionPersonalityEngine } from "@/lib/companionPersonality";
+import { ProjectContextManager } from "@/lib/projectContext";
+import { ProjectMemoryAdapter } from "@/lib/projectMemoryAdapter";
 
 // Strictly local model endpoints
 const OLLAMA_URL = process.env.OLLAMA_URL || "http://127.0.0.1:11434/api/chat";
@@ -17,6 +40,13 @@ export type ChatMessage = {
   content: string;
 };
 
+/**
+ * Type guard to validate whether an unknown value conforms to the ChatMessage structure.
+ * Enforces role validity, non-empty text, and length limits.
+ * 
+ * @param {unknown} value - Value to test.
+ * @returns {boolean} True if the value is a valid ChatMessage.
+ */
 function isChatMessage(value: unknown): value is ChatMessage {
   if (typeof value !== "object" || value === null) return false;
   const message = value as Record<string, unknown>;
@@ -28,17 +58,55 @@ function isChatMessage(value: unknown): value is ChatMessage {
   );
 }
 
+/**
+ * Constructs the comprehensive system prompt for the local AI model.
+ * 
+ * Incorporates:
+ * 1. Base ULTRON persona, system ownership, and local privacy assertions.
+ * 2. Multi-layer memory context retrieved from SQLite FTS5 index.
+ * 3. Language guidance (English, Hindi, or natural Hinglish).
+ * 4. Active project context and user-specified operational constraints.
+ * 5. Structured tool schemas if the query requires tool invocation.
+ * 
+ * @param {RouteDecision} decision - Output from the hybrid intent router.
+ * @param {string} [memoryContext=""] - Formatted long-term memory context.
+ * @returns {string} Fully assembled system prompt.
+ */
 function getSystemPrompt(decision: RouteDecision, memoryContext: string = ""): string {
   const memoryBlock = memoryContext
     ? `\n[5-LAYER PERSISTENT LOCAL MEMORY]:\n${memoryContext}\n`
     : "";
 
+  const taskContext = decision.taskContext;
+  const lang = taskContext?.language || "en";
+  const constraints = taskContext?.constraints || [];
+
+  let langGuidance = "Respond in English concisely and naturally.";
+  if (lang === "hi") {
+    langGuidance = "उपयोगकर्ता ने हिंदी में प्रश्न पूछा है। उत्तर शुद्ध और स्पष्ट हिंदी में दें।";
+  } else if (lang === "hinglish") {
+    langGuidance = "User communicated in natural Hinglish. Respond in natural, helpful Hinglish.";
+  }
+
+  let constraintBlock = "";
+  if (constraints.length > 0) {
+    constraintBlock = "\n[MANDATORY CONSTRAINTS TO PRESERVE]:\n" + constraints.map(c => `- ${c}`).join("\n") + "\n";
+  }
+
+  const companionBlock = decision.companionTone
+    ? CompanionPersonalityEngine.getCompanionPromptBlock(decision.companionTone, lang)
+    : "";
+  const projectSummary = `\n[ACTIVE PROJECT CONTEXT]:\n${ProjectContextManager.getContextSummary()}\n`;
+
   const baseIdentity =
-    "You are ULTRON, the intelligent personal AI system created by Ashish. You run 100% locally on this computer.\n" +
-    "You have direct control over this machine, system diagnostics, and the holographic UI.\n" +
+    "You are ULTRON, the intelligent personal AI assistant created by Ashish. You run 100% locally on this Windows machine.\n" +
+    "You have direct control over this machine, system diagnostics, Windows applications, and the holographic UI.\n" +
     "All conversations, memory, and personal preferences remain strictly private and local.\n" +
-    "You fluently understand and speak Hindi, English, and Hinglish. Respond in the language the user speaks to you.\n" +
-    "Your identity is strictly ULTRON. Understand the user's intent deeply. Answer directly, accurately, and naturally.\n";
+    langGuidance + "\n" +
+    companionBlock + "\n" +
+    projectSummary + "\n" +
+    "Your identity is strictly ULTRON. Understand the user's intent deeply. Answer directly, accurately, and naturally.\n" +
+    constraintBlock;
 
   if (decision.intent === "TOOL_CALL") {
     return (
@@ -48,7 +116,7 @@ function getSystemPrompt(decision: RouteDecision, memoryContext: string = ""): s
       JSON.stringify(ULTRON_TOOLS, null, 2) + "\n\n" +
       "If the user command matches a tool, output ONLY a valid JSON object in this format:\n" +
       '{"tool": "<name>", "parameters": {<args>}}\n' +
-      "If no tool is required, answer the user directly and concisely in 1 or 2 friendly sentences."
+      "If no tool is required, answer the user directly, satisfying all explicit parts of their request."
     );
   }
 
@@ -57,19 +125,28 @@ function getSystemPrompt(decision: RouteDecision, memoryContext: string = ""): s
       baseIdentity +
       memoryBlock +
       "Answer accurately, logically, and directly without hallucinating.\n" +
-      "For cognitive, coding, or math questions, calculate carefully and give the exact factual solution.\n" +
-      "Keep conversational responses concise (2 to 3 sentences in natural Hinglish or English) unless explicitly asked for in-depth explanation or code."
+      "Address every specific requirement or sub-part asked by the user.\n" +
+      "For cognitive, coding, or math questions, calculate carefully and give the exact factual solution with clean steps.\n" +
+      "Provide sufficient technical depth and clear explanations without cutting off."
     );
   }
 
   return (
     baseIdentity +
     memoryBlock +
-    "Answer the user directly, accurately, and concisely in 1 or 2 friendly Hinglish/Hindi sentences. " +
-    "Never repeat system messages. Be conversational, sharp, and helpful."
+    "Answer the user directly, accurately, and helpfully. " +
+    "If the user asks multiple questions or requirements, address each one clearly. " +
+    "Never repeat system messages. Be sharp, factual, and helpful."
   );
 }
 
+/**
+ * Persists a conversational turn into the 5-layer memory engine.
+ * Also scans the user utterance to detect and auto-learn preference corrections.
+ * 
+ * @param {string} userText - User utterance.
+ * @param {string} assistantReply - System response.
+ */
 function recordMemoryTurn(userText: string, assistantReply: string) {
   try {
     ultronMemory.recordTurn("user", userText);
@@ -79,6 +156,13 @@ function recordMemoryTurn(userText: string, assistantReply: string) {
   } catch {}
 }
 
+/**
+ * Generates an instant, zero-latency deterministic offline response when
+ * local Ollama is offline or unheated.
+ * 
+ * @param {string} userText - User query.
+ * @returns {string} Natural, localized Hinglish response.
+ */
 function generateLocalOfflineReply(userText: string): string {
   const lower = userText.toLowerCase().trim();
   if (/^(hi|hello|hey|yo|namaste|hola|sup)\b/i.test(lower)) {
@@ -93,6 +177,17 @@ function generateLocalOfflineReply(userText: string): string {
   return `Understood, sir. Subsystems are active and monitoring locally. Command acknowledged: "${userText.slice(0, 50)}".`;
 }
 
+/**
+ * Packages a completed or rule-based string into a Server-Sent Events (SSE) readable stream.
+ * Chunks words smoothly to simulate real-time neural token streaming in the UI.
+ * 
+ * @param {string} reply - Full text response.
+ * @param {RouteDecision} routeDecision - Router decision metadata.
+ * @param {string} model - Serving model label.
+ * @param {number} elapsedMs - Total latency in milliseconds.
+ * @param {any} [extraData] - Optional auxiliary payloads (tool results, plans).
+ * @returns {Response} Streaming HTTP response.
+ */
 function createStreamResponse(reply: string, routeDecision: RouteDecision, model: string, elapsedMs: number, extraData?: any) {
   const encoder = new TextEncoder();
   const customReadable = new ReadableStream({
@@ -128,6 +223,13 @@ function createStreamResponse(reply: string, routeDecision: RouteDecision, model
   });
 }
 
+/**
+ * Primary HTTP handler for incoming chat, tool execution, and agent planning requests.
+ * Orchestrates routing, authorization verification, Ollama communication, and SSE streaming.
+ * 
+ * @param {Request} req - Incoming POST request.
+ * @returns {Promise<Response>} JSON or SSE streaming response.
+ */
 export async function POST(req: Request) {
   const requestStarted = performance.now();
   let body: unknown;
@@ -172,7 +274,7 @@ export async function POST(req: Request) {
   const userText = lastUserMsg ? lastUserMsg.content : "";
 
   // 1. Run Smart Intent & Brain Router
-  const routeDecision = routeUserQuery(userText, userModelOverride);
+  const routeDecision = routeUserQuery(userText, userModelOverride, conversation);
 
   // Check for confirmed token in text message (e.g. "Confirm a1b2c3d4" or "Token: XYZ")
   let effectiveConfirmToken = confirmToken;
@@ -277,6 +379,62 @@ export async function POST(req: Request) {
           reply = `${rootSummary}\nInspected ${toolExecResult.element_count} UI accessibility elements:\n${elList}`;
         } else {
           reply = `UI Inspection Failed: ${toolExecResult.error}`;
+        }
+      } else if (routeDecision.toolRequired === "focus_window") {
+        if (toolExecResult.status === "success") {
+          const tgt = toolExecResult.target;
+          const ver = toolExecResult.verification;
+          reply = `Window Focused: "${tgt?.title || ver?.foreground_title}" (PID ${tgt?.pid || ver?.foreground_pid}, HWND ${tgt?.hwnd || ver?.foreground_hwnd}). Verification: Window brought to foreground successfully.`;
+        } else {
+          reply = `Window Focus Failed: ${toolExecResult.error}`;
+        }
+      } else if (routeDecision.toolRequired === "click_ui_element") {
+        if (toolExecResult.status === "success") {
+          const tgt = toolExecResult.target;
+          const ver = toolExecResult.verification;
+          reply = `UI Element Clicked: "${tgt?.element_name || tgt?.automation_id || "control"}" (${tgt?.control_type || "element"}). Verification: Invoked via ${ver?.pattern_used || "UIA pattern"}. Target window responsive.`;
+        } else {
+          reply = `UI Click Failed: ${toolExecResult.error}`;
+        }
+      } else if (routeDecision.toolRequired === "type_text") {
+        if (toolExecResult.status === "success") {
+          const tgt = toolExecResult.target;
+          const ver = toolExecResult.verification;
+          reply = `Text Entered: Successfully typed text into "${tgt?.element_name || tgt?.automation_id || "control"}" (${tgt?.control_type || "field"}). Verification: Input confirmed via ${ver?.method_used || "UIA"}.`;
+        } else {
+          reply = `Text Entry Failed: ${toolExecResult.error}`;
+        }
+      } else if (routeDecision.toolRequired === "press_key") {
+        if (toolExecResult.status === "success") {
+          const ver = toolExecResult.verification;
+          reply = `Key Sent: Key '${ver?.key_sent || routeDecision.toolParams?.key}' delivered to target window. Verification: Window responsive.`;
+        } else {
+          reply = `Key Press Failed: ${toolExecResult.error}`;
+        }
+      } else if (routeDecision.toolRequired === "capture_screen") {
+        if (toolExecResult.status === "success") {
+          reply = `Desktop Screenshot Captured: Image saved to "${toolExecResult.file_path}" (${toolExecResult.width}x${toolExecResult.height}, ${toolExecResult.size_bytes} bytes).`;
+        } else {
+          reply = `Screen Capture Failed: ${toolExecResult.error}`;
+        }
+      } else if (routeDecision.toolRequired === "analyze_screen") {
+        if (toolExecResult.status === "success") {
+          reply = toolExecResult.analysis || "Screen analyzed successfully.";
+        } else {
+          reply = `Screen Analysis Failed: ${toolExecResult.error}`;
+        }
+      } else if (routeDecision.toolRequired === "desktop_workflow") {
+        if (toolExecResult.status === "success") {
+          const ver = toolExecResult.verification;
+          reply = `Desktop Workflow Completed: ${toolExecResult.action.toUpperCase()} on "${toolExecResult.windowTitle}" (PID ${toolExecResult.targetPid || 'active'}). Verification: ${ver?.evidence || "Action confirmed"}.`;
+        } else {
+          reply = `Desktop Workflow Failed: ${toolExecResult.error || "Action could not be completed."}`;
+        }
+      } else if (routeDecision.toolRequired === "browse_web") {
+        if (toolExecResult.status === "success") {
+          reply = `Web Page Retrieved: "${toolExecResult.title}" (${toolExecResult.url})\n\n${toolExecResult.content}`;
+        } else {
+          reply = `Web Browsing Failed: ${toolExecResult.error}`;
         }
       } else {
         reply = toolExecResult.message || (toolExecResult.error ? `Error: ${toolExecResult.error}` : "Tool execution resolved.");
@@ -440,8 +598,8 @@ export async function POST(req: Request) {
       messages: fullMessages,
       keep_alive: "24h",
       options: {
-        num_predict: routeDecision.intent === "COMPLEX_REASONING" ? 128 : 64,
-        temperature: routeDecision.intent === "COMPLEX_REASONING" ? 0.3 : 0.6,
+        num_predict: routeDecision.intent === "COMPLEX_REASONING" ? 512 : 256,
+        temperature: routeDecision.intent === "COMPLEX_REASONING" ? 0.2 : 0.5,
       },
       stream: !!stream,
     };
@@ -477,6 +635,18 @@ export async function POST(req: Request) {
   });
 }
 
+/**
+ * Consumes the response from the local Ollama daemon and converts it into
+ * either a real-time SSE token stream or a complete JSON response.
+ * 
+ * @param {Response} res - Raw fetch response from Ollama.
+ * @param {string} model - Model name.
+ * @param {RouteDecision} route - Intent router metadata.
+ * @param {boolean} stream - Whether the client requested an event stream.
+ * @param {number} requestStarted - High-resolution timestamp from start of request.
+ * @param {string} userText - User utterance for memory storage.
+ * @returns {Promise<Response>} Transformed HTTP response.
+ */
 async function handleOllamaResponse(
   res: Response,
   model: string,

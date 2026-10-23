@@ -2,7 +2,7 @@ import json
 import urllib.error
 import urllib.request
 
-HEALTH_URL = "http://127.0.0.1:5001/healthz"
+HEALTH_URL = "http://127.0.0.1:5001/health"
 
 try:
     with urllib.request.urlopen(HEALTH_URL, timeout=5) as response:

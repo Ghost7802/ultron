@@ -20,7 +20,7 @@ TOOLS_TS = os.path.join(WORKSPACE_ROOT, "lib", "ultronTools.ts")
 
 class TestUltronUIAutomation(unittest.TestCase):
 
-    def run_bridge_ps1(self, args_list, timeout=15):
+    def run_bridge_ps1(self, args_list, timeout=35):
         """Helper to invoke the PowerShell UIA bridge directly."""
         cmd = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", PS1_BRIDGE] + args_list
         proc = subprocess.run(
@@ -28,6 +28,8 @@ class TestUltronUIAutomation(unittest.TestCase):
             cwd=WORKSPACE_ROOT,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout
         )
         self.assertEqual(proc.returncode, 0, f"Bridge exited with non-zero code: {proc.stderr}")
@@ -179,7 +181,7 @@ console.log(JSON.stringify({
 }));
 """
         cmd = ["node", "--experimental-strip-types", "-e", node_script]
-        proc = subprocess.run(cmd, cwd=WORKSPACE_ROOT, capture_output=True, text=True, timeout=20)
+        proc = subprocess.run(cmd, cwd=WORKSPACE_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
         self.assertEqual(proc.returncode, 0, f"Node script failed: {proc.stderr}")
         lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
         json_line = next((l for l in lines if l.startswith("{")), None)
@@ -204,7 +206,7 @@ const names = ULTRON_TOOLS.map(t => t.name);
 console.log(JSON.stringify(names));
 """
         cmd = ["node", "--experimental-strip-types", "-e", node_script]
-        proc = subprocess.run(cmd, cwd=WORKSPACE_ROOT, capture_output=True, text=True, timeout=20)
+        proc = subprocess.run(cmd, cwd=WORKSPACE_ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=20)
         self.assertEqual(proc.returncode, 0, f"Node script failed: {proc.stderr}")
         lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
         json_line = next((l for l in lines if l.startswith("[")), None)

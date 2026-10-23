@@ -32,6 +32,12 @@ using System.Windows.Automation;
 
 public class UltronUiaBridge {
     [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr OpenWindowStation(string lpszWinSta, bool fInherit, uint dwDesiredAccess);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool SetProcessWindowStation(IntPtr hWinSta);
+
+    [DllImport("user32.dll", SetLastError = true)]
     public static extern IntPtr OpenDesktop(string lpszDesktop, uint dwFlags, bool fInherit, uint dwDesiredAccess);
 
     [DllImport("user32.dll", SetLastError = true)]
@@ -44,6 +50,9 @@ public class UltronUiaBridge {
 
     [DllImport("user32.dll")]
     public static extern bool EnumDesktopWindows(IntPtr hDesktop, EnumWindowsProc lpfn, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern bool EnumWindows(EnumWindowsProc lpfn, IntPtr lParam);
 
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
     public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
@@ -106,51 +115,75 @@ public class UltronUiaBridge {
 
     public static List<WindowSummary> EnumerateWindows() {
         var results = new List<WindowSummary>();
+        var seenHwnds = new HashSet<long>();
+
+        try {
+            IntPtr hWinsta = OpenWindowStation("WinSta0", false, 0x037F);
+            if (hWinsta != IntPtr.Zero) {
+                SetProcessWindowStation(hWinsta);
+            }
+        } catch {}
+
         IntPtr hDesktop = OpenDesktop("Default", 0, false, DESKTOP_ALL_ACCESS);
+        if (hDesktop == IntPtr.Zero) {
+            hDesktop = OpenDesktop("Default", 0, false, 0x01FF);
+        }
         if (hDesktop == IntPtr.Zero) {
             hDesktop = OpenDesktop("Default", 0, false, 0x0041);
         }
 
+        EnumWindowsProc proc = (hWnd, lParam) => {
+            try {
+                long hVal = hWnd.ToInt64();
+                if (seenHwnds.Contains(hVal)) return true;
+
+                uint pid;
+                GetWindowThreadProcessId(hWnd, out pid);
+                bool visible = IsWindowVisible(hWnd);
+                int len = GetWindowTextLength(hWnd);
+                StringBuilder sbTitle = new StringBuilder(len + 1);
+                GetWindowText(hWnd, sbTitle, len + 1);
+                string title = sbTitle.ToString();
+
+                StringBuilder sbClass = new StringBuilder(256);
+                GetClassName(hWnd, sbClass, 256);
+                string cls = sbClass.ToString();
+
+                RECT rect;
+                GetWindowRect(hWnd, out rect);
+                int w = rect.Right - rect.Left;
+                int h = rect.Bottom - rect.Top;
+
+                // Include windows with titles or meaningful visible UI
+                if (!string.IsNullOrWhiteSpace(title) && (visible || (w > 50 && h > 50)) && w > 0 && h > 0) {
+                    seenHwnds.Add(hVal);
+                    results.Add(new WindowSummary {
+                        Hwnd = hVal,
+                        Pid = pid,
+                        Title = title,
+                        ClassName = cls,
+                        IsVisible = visible,
+                        IsMinimized = IsIconic(hWnd),
+                        X = rect.Left,
+                        Y = rect.Top,
+                        Width = w,
+                        Height = h
+                    });
+                }
+            } catch {}
+            return true;
+        };
+
         if (hDesktop != IntPtr.Zero) {
-            EnumDesktopWindows(hDesktop, (hWnd, lParam) => {
-                try {
-                    uint pid;
-                    GetWindowThreadProcessId(hWnd, out pid);
-                    bool visible = IsWindowVisible(hWnd);
-                    int len = GetWindowTextLength(hWnd);
-                    StringBuilder sbTitle = new StringBuilder(len + 1);
-                    GetWindowText(hWnd, sbTitle, len + 1);
-                    string title = sbTitle.ToString();
-
-                    StringBuilder sbClass = new StringBuilder(256);
-                    GetClassName(hWnd, sbClass, 256);
-                    string cls = sbClass.ToString();
-
-                    RECT rect;
-                    GetWindowRect(hWnd, out rect);
-                    int w = rect.Right - rect.Left;
-                    int h = rect.Bottom - rect.Top;
-
-                    // Only include windows with titles or meaningful visible UI
-                    if (!string.IsNullOrWhiteSpace(title) && visible && w > 0 && h > 0) {
-                        results.Add(new WindowSummary {
-                            Hwnd = hWnd.ToInt64(),
-                            Pid = pid,
-                            Title = title,
-                            ClassName = cls,
-                            IsVisible = visible,
-                            IsMinimized = IsIconic(hWnd),
-                            X = rect.Left,
-                            Y = rect.Top,
-                            Width = w,
-                            Height = h
-                        });
-                    }
-                } catch {}
-                return true;
-            }, IntPtr.Zero);
+            try { SetThreadDesktop(hDesktop); } catch {}
+            EnumDesktopWindows(hDesktop, proc, IntPtr.Zero);
             CloseDesktop(hDesktop);
         }
+
+        // Also call EnumWindows to ensure full desktop coverage
+        try {
+            EnumWindows(proc, IntPtr.Zero);
+        } catch {}
 
         return results;
     }

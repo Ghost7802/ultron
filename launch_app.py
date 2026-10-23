@@ -1,3 +1,19 @@
+"""
+ULTRON Master Process Supervisor & Desktop Window Host.
+
+Subsystem:
+Application Lifecycle & Process Orchestration Engine.
+
+Responsibilities:
+- Single-instance Named Mutex guard (preventing multiple concurrent instances).
+- Manages and auto-restarts microservice child processes:
+    1. Local Ollama server (model pre-warming).
+    2. Python Voice / Faster-Whisper / Piper STT server (port 5001).
+    3. Next.js standalone web frontend (port 3000).
+- Embeds the application in a native Windows pywebview desktop frame.
+- Structured JSONL logging with health heartbeats and clean process tree termination on exit.
+"""
+
 import html
 import json
 import logging

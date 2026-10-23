@@ -175,7 +175,7 @@ async function runCommunicationEvaluation() {
   console.log("       ULTRON LOCAL COMMUNICATION INTELLIGENCE EVALUATION (20 SCENARIOS)");
   console.log("================================================================================\n");
 
-  let totalTests = EVAL_CASES.length;
+  const totalTests = EVAL_CASES.length;
   let passedTests = 0;
   const results: any[] = [];
 
