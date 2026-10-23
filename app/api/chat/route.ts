@@ -277,11 +277,13 @@ export async function POST(req: Request) {
   const routeDecision = routeUserQuery(userText, userModelOverride, conversation);
 
   // Check for confirmed token in text message (e.g. "Confirm a1b2c3d4" or "Token: XYZ")
-  let effectiveConfirmToken = confirmToken;
+    let effectiveConfirmToken = confirmToken;
   if (!effectiveConfirmToken) {
-    const tokenInText = userText.match(/\b(?:token:?\s*|confirm\s+)?([A-Za-z0-9]{8})\b/i);
+    const tokenInText = userText.match(/\b(?:token:?\s*|confirm\s+)([A-Za-z0-9]{8})\b/i);
     if (tokenInText) {
       effectiveConfirmToken = tokenInText[1].toUpperCase();
+    } else if (/^[A-Za-z0-9]{8}$/.test(userText.trim())) {
+      effectiveConfirmToken = userText.trim().toUpperCase();
     }
   }
 
