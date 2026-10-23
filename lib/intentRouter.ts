@@ -3048,6 +3048,44 @@ export function routeUserQuery(
 
   // 5b. Dedicated Real Browser Control (Google Chrome / Edge)
 
+  // Hindi, Hinglish & English Direct Website / URL Navigation (e.g. 'chrome me youtube kholo', 'open youtube.com', 'google.com chalao', 'chrome pe reddit open karo')
+  const directWebNavMatch =
+    lower.match(/\b(?:google\s+)?(chrome|edge|browser)\s+(?:pe|par|me|mein)\s+([a-zA-Z0-9\-\._~:\/\?#\[\]@!\$&'\(\)\*\+,;=]+)\s*(?:kholo|open karo|chalao|start karo|navigate|go to)?\b/i) ||
+    lower.match(/\b(?:open|kholo|chalao|navigate to|go to)\s+([a-zA-Z0-9\-\.]+\.(?:com|org|net|io|in|edu|gov|co|ai)[^\s]*)\b/i) ||
+    lower.match(/\b([a-zA-Z0-9\-\.]+\.(?:com|org|net|io|in|edu|gov|co|ai)[^\s]*)\s+(?:kholo|open karo|chalao|start karo)\b/i) ||
+    lower.match(/\b(?:kholo|open karo|chalao)\s+(?:website\s+)?(youtube|google|github|wikipedia|twitter|reddit|facebook|instagram|linkedin)\b/i) ||
+    lower.match(/\b(youtube|google|github|wikipedia|twitter|reddit|facebook|instagram|linkedin)\s+(?:kholo|open karo|chalao)\b/i);
+
+  if (directWebNavMatch) {
+    let rawUrl = (directWebNavMatch[2] || directWebNavMatch[1] || '').trim();
+    const browser = (directWebNavMatch[1] === 'edge' || directWebNavMatch[1] === 'chrome') ? directWebNavMatch[1].toLowerCase() : 'chrome';
+    if (['youtube', 'google', 'github', 'wikipedia', 'twitter', 'reddit', 'facebook', 'instagram', 'linkedin'].includes(rawUrl.toLowerCase())) {
+      rawUrl = 'https://www.' + rawUrl.toLowerCase() + '.com';
+    }
+    const finalUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : 'https://' + rawUrl;
+    return {
+      intent: 'TOOL_CALL',
+      targetModel: 'local-rule',
+      toolRequired: 'browser_control',
+      toolParams: { action: 'navigate', url: finalUrl, browser },
+      confidence: 0.99,
+      reason: 'Direct browser website navigation in Chrome/Edge',
+    };
+  }
+
+  // Reading active website or page content (e.g. 'page read karo', 'website padho', 'read this page', 'ye website padho')
+  const readPageMatch = lower.match(/\b(?:page read|website read|read (?:this )?page|read website|page padho|website padho|(?:ye|yeh|is)?\s*website padho|(?:ye|yeh|is)?\s*page padho|kya likha hai (?:is )?(?:page|website) pe|read active tab|tab padho)\b/i);
+  if (readPageMatch) {
+    return {
+      intent: 'TOOL_CALL',
+      targetModel: 'local-rule',
+      toolRequired: 'browser_control',
+      toolParams: { action: 'get_state', browser: 'chrome' },
+      confidence: 0.98,
+      reason: 'Read active webpage state and tab content',
+    };
+  }
+
   const navUrlMatch = lower.match(/\b(?:navigate to|go to|open url|open website)\s+([a-zA-Z0-9\-\._~:\/\?#\[\]@!\$&'\(\)\*\+,;=]+)(?:\s+(?:in|on)\s+(chrome|edge|browser))?/i);
 
   if (navUrlMatch) {

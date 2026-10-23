@@ -1304,11 +1304,30 @@ export const ultronMemory = {
 
 
 
-  // Auto-Learn Corrections from User Dialogue
-
+  // Auto-Learn Corrections & Facts from User Dialogue
   processPotentialCorrection(userText: string): MemoryEntry | null {
-
     const lower = userText.toLowerCase().trim();
+
+    // 1. Direct Name & Identity declarations
+    const nameMatch = userText.match(/(?:my name is|mera naam|call me)\s+([a-zA-Z]+)/i);
+    if (nameMatch) {
+      return this.savePreference('owner', nameMatch[1], 'identity', 1.0);
+    }
+
+    // 2. Active Teaching & Fact Memorization
+    const learnMatch = lower.match(/(?:seekh lo ki|seekh lo|ye seekho ki|learn that|remember that|yaad rakhna ki|yaad rakhna|save this fact:?|note down:?|aage se|from now on)\s+(.*)/i);
+    if (learnMatch && learnMatch[1].trim().length >= 3) {
+      const fact = learnMatch[1].trim();
+      const slug = 'learned_' + Date.now().toString(36);
+      return this.savePreference(slug, fact, 'learned_knowledge', 1.0);
+    }
+
+    // 3. User Preferences & Personal Habits
+    const prefMatch = lower.match(/(?:mera|meri|mujhe|my|i prefer|i like)\s+(favorite [a-z0-9\-_]+|pasand hai|browser|editor|language|stack)\s*(?:is|hai|use karna)?\s*(.*)/i);
+    if (prefMatch && prefMatch[2] && prefMatch[2].trim().length >= 2) {
+      const topic = prefMatch[1].replace(/\s+/g, '_');
+      return this.savePreference('pref_' + topic, userText.trim(), 'user_preference', 1.0);
+    }
 
     const correctionMatch =
 

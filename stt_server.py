@@ -40,7 +40,7 @@ for output_stream in (sys.stdout, sys.stderr):
 
 print("[ULTRON BACKEND] Initializing offline Whisper STT & System Core...", flush=True)
 try:
-    model = WhisperModel("tiny", device="cpu", compute_type="int8")
+    model = WhisperModel("tiny", device="cpu", compute_type="int8", cpu_threads=4)
     print("[ULTRON BACKEND] Whisper STT & System Core ready on http://127.0.0.1:5001", flush=True)
 except Exception as e:
     print(f"[ULTRON BACKEND ERROR] Error loading Whisper model: {e}", flush=True)
@@ -157,8 +157,8 @@ class STTHandler(BaseHTTPRequestHandler):
                     segments, info = model.transcribe(
                         tmp_path,
                         beam_size=1,
-                        vad_filter=True,
-                        initial_prompt="Hindi, English, Hinglish: Ultron jarvis voice command"
+                        vad_filter=False,
+                        initial_prompt="Hindi, English, Hinglish: Ashish, Ultron, Chrome, YouTube, VS Code, open, kholo, band, scroll, search, system"
                     )
                     text = " ".join([seg.text.strip() for seg in segments if seg.text.strip()])
 

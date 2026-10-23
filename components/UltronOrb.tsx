@@ -40,9 +40,9 @@ function limitConversation(messages: ChatMessage[]): ChatMessage[] {
 const SPEECH_START_LEVEL = 0.010;
 const SPEECH_END_LEVEL = 0.008;
 const BARGE_IN_LEVEL = 0.015;
-const SILENCE_END_MS = 450;
+const SILENCE_END_MS = 380;
 const MAX_RECORDING_MS = 8_000;
-const MIN_RECORDING_MS = 350;
+const MIN_RECORDING_MS = 300;
 const MAX_CONVERSATION_MESSAGES = 20;
 const MAX_CONVERSATION_CHARACTERS = 12_000;
 
@@ -96,6 +96,7 @@ export default function UltronOrb() {
   const animFrameRef = useRef<number | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const speechRecognitionRef = useRef<any>(null);
+  const lastNativeFinalRef = useRef<string>("");
   const activeAudioRef = useRef<HTMLAudioElement | null>(null);
   const startVoiceSystemRef = useRef<(() => Promise<void>) | null>(null);
 
@@ -236,7 +237,7 @@ export default function UltronOrb() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text: sentence }),
-          signal: AbortSignal.timeout(6000),
+          signal: AbortSignal.timeout(1800),
         });
         if (res.ok && res.headers.get("content-type")?.includes("audio/wav")) {
           const blob = await res.blob();
@@ -322,7 +323,11 @@ export default function UltronOrb() {
       }
 
       if (!voiceActiveRef.current || sessionId !== voiceSessionRef.current) return;
-      const transcript = data.text?.trim() ?? "";
+      let transcript = data.text?.trim() ?? "";
+      if (!transcript && lastNativeFinalRef.current) {
+        transcript = lastNativeFinalRef.current.trim();
+        lastNativeFinalRef.current = "";
+      }
       if (!transcript) {
         console.debug("[ULTRON STT] No speech detected in the captured audio.");
         if (voiceActiveRef.current && sessionId === voiceSessionRef.current) {
@@ -501,10 +506,14 @@ export default function UltronOrb() {
               setVoiceLabel(`HEARING: "${interim.slice(0, 16)}…"`);
             }
             if (final.trim() && !isChatBusyRef.current) {
-              console.info("[ULTRON NATIVE STT]", final.trim());
+              lastNativeFinalRef.current = final.trim();
+              console.info("[ULTRON NATIVE STT HINT]", final.trim());
               setVoiceLabel("THINKING…");
               updateVisualState("thinking");
-              void handleUserSpeech(final.trim(), sessionId);
+              // Do not preempt mediaRecorder Whisper; only dispatch if recorder is idle/unsupported
+              if (!mediaRecorderRef.current) {
+                void handleUserSpeech(final.trim(), sessionId);
+              }
             }
           };
           rec.onerror = (recErr: any) => {

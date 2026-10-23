@@ -564,10 +564,26 @@ const APPROVED_APPLICATIONS: Record<string, { binary: string; args: string[]; de
   code: { binary: "code", args: [], desc: "Visual Studio Code" },
   taskmgr: { binary: "taskmgr.exe", args: [], desc: "Task Manager" },
   cmd: { binary: "cmd.exe", args: [], desc: "Command Prompt" },
+  spotify: { binary: "spotify.exe", args: [], desc: "Spotify Music Player" },
+  vlc: { binary: "vlc.exe", args: [], desc: "VLC Media Player" },
+  discord: { binary: "Discord.exe", args: [], desc: "Discord" },
+  paint: { binary: "mspaint.exe", args: [], desc: "MS Paint" },
+  mspaint: { binary: "mspaint.exe", args: [], desc: "MS Paint" },
+  word: { binary: "winword.exe", args: [], desc: "Microsoft Word" },
+  excel: { binary: "excel.exe", args: [], desc: "Microsoft Excel" },
+  powerpoint: { binary: "powerpnt.exe", args: [], desc: "Microsoft PowerPoint" },
+  settings: { binary: "ms-settings:", args: [], desc: "Windows Settings" },
+  control: { binary: "control.exe", args: [], desc: "Windows Control Panel" },
 };
 
 export async function resolveInstalledApplication(appKey: string): Promise<{ binary: string; args: string[]; desc: string } | null> {
   const clean = appKey.toLowerCase().trim();
+
+  // Direct Web Domain or URL Navigation Check
+  if (/^https?:\/\//i.test(clean) || /\.(com|org|net|io|in|edu|gov|co|ai)\b/i.test(clean) || clean.startsWith("www.") || clean.includes("youtube") || clean.includes("google") || clean.includes("github")) {
+    const url = /^https?:\/\//i.test(clean) ? clean : (clean.includes(".") ? "https://" + clean : `https://www.${clean}.com`);
+    return { binary: "chrome.exe", args: [url], desc: `Website: ${url}` };
+  }
   const approved = APPROVED_APPLICATIONS[clean];
   if (approved) {
     // Resolve machine-specific paths at runtime so Turbopack does not treat them as bundled assets.
@@ -618,7 +634,8 @@ export async function resolveInstalledApplication(appKey: string): Promise<{ bin
     }
   } catch {}
 
-  return null;
+  // Windows Shell Start Fallback (launches installed UWP apps, protocol handlers, start-menu programs)
+  return { binary: "powershell.exe", args: ["-NoProfile", "-Command", `Start-Process '${clean}' -ErrorAction SilentlyContinue`], desc: `${appKey} (Windows Shell)` };
 }
 
 // Approved prefix whitelist for developer command execution
