@@ -57,13 +57,13 @@ def test_hud_protocol_compatibility():
     report = simulate_planner("Verify holographic orb telemetry")
     active_plan = report["activePlan"]
 
-    # Protocol requirements expected by JarvisOrb.tsx
+    # Protocol requirements expected by UltronOrb.tsx
     assert "goal" in active_plan and isinstance(active_plan["goal"], str), "Missing or invalid goal"
     assert "passed" in active_plan and isinstance(active_plan["passed"], int), "Missing or invalid passed count"
     assert "total" in active_plan and isinstance(active_plan["total"], int), "Missing or invalid total count"
     assert "status" in active_plan and isinstance(active_plan["status"], str), "Missing or invalid status"
     assert active_plan["status"] in ["running", "completed", "failed"], f"Unexpected status: {active_plan['status']}"
-    print("  --> activePlan payload is 100% backward compatible with JarvisOrb.tsx HUD.")
+    print("  --> activePlan payload is 100% compatible with UltronOrb.tsx HUD.")
 
 def test_phase2_dynamic_agent_loop():
     print("[TEST] Running Phase 2 Bounded Dynamic Agent Execution Loop Suite...")

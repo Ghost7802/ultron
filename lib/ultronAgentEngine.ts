@@ -9,7 +9,7 @@
  * - Tool observations treated strictly as untrusted data.
  * - Deduplication of identical consecutive calls to prevent infinite loops / side-effects.
  * - Destructive tools strictly require cryptographic confirmation tokens.
- * - Full backward compatibility with the frontend HUD (JarvisOrb activePlan).
+ * - Full backward compatibility with the frontend HUD (UltronOrb activePlan).
  */
 
 import { ULTRON_TOOLS, type ToolDefinition } from "./intentRouter";

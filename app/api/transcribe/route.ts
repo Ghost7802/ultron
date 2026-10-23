@@ -3,8 +3,8 @@
  * @description Next.js API route that proxies microphone audio to the local Faster-Whisper STT server.
  * 
  * Architecture & Data Flow:
- * 1. JarvisOrb records audio in the browser (WAV/WebM binary stream).
- * 2. JarvisOrb sends a POST request with the raw audio binary to this endpoint (`/api/transcribe`).
+ * 1. UltronOrb records audio in the browser (WAV/WebM binary stream).
+ * 2. UltronOrb sends a POST request with the raw audio binary to this endpoint (`/api/transcribe`).
  * 3. This route enforces payload safety checks (max 25MB, non-empty validation).
  * 4. The audio is forwarded to the local Python STT server running on `http://127.0.0.1:5001/transcribe`.
  * 5. Returns `{ text: "transcribed speech" }` to the frontend.

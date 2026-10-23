@@ -3,7 +3,7 @@
  * @description Next.js API route that proxies speech synthesis requests to the local Piper neural TTS backend.
  * 
  * Architecture & Data Flow:
- * 1. The frontend (`JarvisOrb`) receives a text response from the assistant.
+ * 1. The frontend (`UltronOrb`) receives a text response from the assistant.
  * 2. It sends a POST request with `{ text: "..." }` to `/api/tts`.
  * 3. This route validates the text and proxies the request to the local Python voice microservice
  *    running Piper ONNX (`http://127.0.0.1:5001/tts/synthesize`).

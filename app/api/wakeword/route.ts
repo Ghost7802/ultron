@@ -3,7 +3,7 @@
  * @description Next.js API route that interfaces with the local OpenWakeWord background listener.
  * 
  * Responsibilities:
- * - GET: Polls for wake-word activation events (e.g. "Hey Jarvis" or "Ultron") emitted by `ultron_voice_core.py`.
+ * - GET: Polls for wake-word activation events (e.g. "Ultron") emitted by `ultron_voice_core.py`.
  * - POST: Allows the web interface to enable, disable, or adjust sensitivity on the host microphone wake-word engine.
  */
 

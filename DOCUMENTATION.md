@@ -92,7 +92,7 @@ flowchart TD
 - **Security Confirmation Gate**: Destructive actions (e.g., terminating processes, deleting files, overwriting existing files) issue an 8-character confirmation token and require explicit confirmation before execution.
 - **Developer Workflows**: Run safe developer commands (`git status`, `npm test`, `pytest`) while blocking dangerous system destruction commands.
 
-### Pillar 04: Natural Voice Conversation (`stt_server.py` & `JarvisOrb.tsx`)
+### Pillar 04: Natural Voice Conversation (`stt_server.py` & `UltronOrb.tsx`)
 - **Full-Duplex Barge-In**: If the user begins speaking while the assistant is speaking, audio synthesis is canceled immediately (`window.speechSynthesis.cancel()`), the speech queue is cleared, and Ultron transitions into `listening` mode without waiting.
 - **Sentence-Streaming TTS**: Token chunks from `/api/chat` are buffered until sentence boundaries (`. `, `? `, `! `, `\n`). The first sentence is spoken immediately (< 400ms) while remaining tokens generate in the background.
 - **Acoustic Echo Prevention**: Microphones ignore synthesized playback so the assistant never transcribes its own speech.

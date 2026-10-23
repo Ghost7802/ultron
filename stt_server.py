@@ -10,7 +10,7 @@ Key Responsibilities:
     /transcribe       -> Converts user WAV/WebM audio buffer into text.
     /tts/synthesize   -> Synthesizes neural voice audio via Piper ONNX.
     /tts/stop         -> Immediately silences audio playback for barge-in interruptions.
-    /wakeword/poll    -> Relays live wake-word events ("Hey Jarvis") to the frontend.
+    /wakeword/poll    -> Relays live wake-word events ("Ultron") to the frontend.
     /health           -> Reports operational readiness and subsystem statuses.
 - Runs multi-threaded request handlers with zero cloud dependencies.
 """
@@ -53,7 +53,7 @@ wake_word_engine = None
 try:
     wake_word_engine = UltronWakeWord()
     wake_word_engine.start()
-    print("[ULTRON BACKEND] Wake-word listener active (phrase: 'Hey Jarvis')", flush=True)
+    print("[ULTRON BACKEND] Wake-word listener active (phrase: 'Ultron')", flush=True)
 except Exception as e:
     print(f"[ULTRON BACKEND WARNING] Wake-word listener deferred: {e}", flush=True)
 
