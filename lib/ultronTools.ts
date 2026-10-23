@@ -949,27 +949,30 @@ export const ultronTools = {
           return { status: "error", error: "Missing required 'app_name' parameter." };
         }
 
-        // 1. Check if application is ALREADY running and has a desktop window
-        try {
-          const discovery = await DesktopApplicationController.discoverTargetWindow({ application: appKey });
-          if (discovery.matched && discovery.matched.hwnd) {
-            const focusRes = await ultronUIAutomation.focusWindow({
-              hwnd: discovery.matched.hwnd,
-              pid: discovery.matched.pid,
-              title: discovery.matched.title,
-            });
-            return {
-              status: "success",
-              action: "focused_existing",
-              pid: discovery.matched.pid,
-              hwnd: discovery.matched.hwnd,
-              window_title: discovery.matched.title,
-              app_name: appKey,
-              message: `Application '${appKey}' is already active on the desktop; brought window "${discovery.matched.title}" to the foreground.`,
-              verification: focusRes.verification || { is_foreground: true },
-            };
-          }
-        } catch {}
+        // 1. Check if application is ALREADY running and has a desktop window (only if no specific file/args requested)
+        const hasExtraArgs = (params.args && params.args.length > 0) || Boolean(params.file_path);
+        if (!hasExtraArgs) {
+          try {
+            const discovery = await DesktopApplicationController.discoverTargetWindow({ application: appKey });
+            if (discovery.matched && discovery.matched.hwnd) {
+              const focusRes = await ultronUIAutomation.focusWindow({
+                hwnd: discovery.matched.hwnd,
+                pid: discovery.matched.pid,
+                title: discovery.matched.title,
+              });
+              return {
+                status: "success",
+                action: "focused_existing",
+                pid: discovery.matched.pid,
+                hwnd: discovery.matched.hwnd,
+                window_title: discovery.matched.title,
+                app_name: appKey,
+                message: `Application '${appKey}' is already active on the desktop; brought window "${discovery.matched.title}" to the foreground.`,
+                verification: focusRes.verification || { is_foreground: true },
+              };
+            }
+          } catch {}
+        }
 
         // 2. Resolve binary dynamically
         const appConfig = await resolveInstalledApplication(appKey);
@@ -981,7 +984,12 @@ export const ultronTools = {
         }
 
         try {
-          const child = spawn(appConfig.binary, appConfig.args, {
+          const spawnArgs = [
+            ...appConfig.args,
+            ...(Array.isArray(params.args) ? params.args : []),
+            ...(params.file_path ? [String(params.file_path)] : []),
+          ];
+          const child = spawn(appConfig.binary, spawnArgs, {
             detached: true,
             stdio: "ignore",
             windowsHide: false,
