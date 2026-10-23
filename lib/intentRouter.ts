@@ -3146,7 +3146,10 @@ export function routeUserQuery(
 
 
 
-  const scrollBrowserMatch = lower.match(/\b(?:scroll down|page down|scroll niche)\s*(?:in|on)?\s*(chrome|edge|browser|page)?\b/i);
+  const scrollBrowserMatch =
+    lower.match(/\b(?:scroll down|page down|scroll niche|niche scroll|scroll karo niche|niche scroll karo)\s*(?:in|on)?\s*(chrome|edge|browser|page)?\b/i) ||
+    lower.match(/\b(?:thoda\s+)?niche\s+(?:thoda\s+)?scroll(?:\s+karo)?\b/i) ||
+    lower.match(/\bscroll\s+(?:karo\s+)?(?:thoda\s+)?niche\b/i);
 
   if (scrollBrowserMatch) {
 
@@ -3170,7 +3173,10 @@ export function routeUserQuery(
 
 
 
-  const scrollUpBrowserMatch = lower.match(/\b(?:scroll up|page up|scroll upar)\s*(?:in|on)?\s*(chrome|edge|browser|page)?\b/i);
+  const scrollUpBrowserMatch =
+    lower.match(/\b(?:scroll up|page up|scroll upar|upar scroll|scroll karo upar|upar scroll karo)\s*(?:in|on)?\s*(chrome|edge|browser|page)?\b/i) ||
+    lower.match(/\b(?:thoda\s+)?upar\s+(?:thoda\s+)?scroll(?:\s+karo)?\b/i) ||
+    lower.match(/\bscroll\s+(?:karo\s+)?(?:thoda\s+)?upar\b/i);
 
   if (scrollUpBrowserMatch) {
 
