@@ -32,3 +32,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/release/
+/release2/
+/appasar_extracted/
+*.asar
+*.bak
+*.db

@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="orbGlow" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
+      <stop offset="0%" stop-color="#00f2ff" stop-opacity="1"/>
+      <stop offset="40%" stop-color="#0078ff" stop-opacity="1"/>
+      <stop offset="100%" stop-color="#001a33" stop-opacity="1"/>
+    </radialGradient>
+    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00d4ff"/>
+      <stop offset="50%" stop-color="#0078ff"/>
+      <stop offset="100%" stop-color="#003366"/>
+    </linearGradient>
+    <filter id="outerGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="15" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <circle cx="256" cy="256" r="230" fill="url(#orbGlow)"/>
+  <circle cx="256" cy="256" r="200" fill="none" stroke="url(#ringGrad)" stroke-width="12" opacity="0.9"/>
+  <circle cx="256" cy="256" r="200" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.3"/>
+  <circle cx="256" cy="256" r="150" fill="none" stroke="#00f2ff" stroke-width="6" opacity="0.6" filter="url(#outerGlow)"/>
+
+  <path d="M 256 60 A 196 196 0 0 1 452 256 A 196 196 0 0 1 256 452 A 196 196 0 0 1 60 256 A 196 196 0 0 1 256 60 Z" fill="none" stroke="#00d4ff" stroke-width="10" stroke-linecap="round" opacity="0.8"/>
+
+  <circle cx="256" cy="256" r="40" fill="#ffffff"/>
+  <circle cx="256" cy="256" r="40" fill="none" stroke="#00f2ff" stroke-width="4"/>
+
+  <path d="M 256 140 L 256 256 M 372 256 L 256 256 M 256 372 L 256 256 M 140 256 L 256 256" stroke="#00f2ff" stroke-width="4" stroke-linecap="round" opacity="0.5"/>
+  <path d="M 200 200 L 256 256 M 312 312 L 256 256 M 312 200 L 256 256 M 200 312 L 256 256" stroke="#ffffff" stroke-width="3" stroke-linecap="round" opacity="0.4"/>
+
+  <text x="256" y="262" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#00f2ff" text-anchor="middle" letter-spacing="2">U.L.T.R.O.N.</text>
+</svg>

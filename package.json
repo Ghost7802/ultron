@@ -1,12 +1,20 @@
 {
-  "name": "ultron-orb-ui",
+  "name": "ultron-desktop",
+  "productName": "ULTRON",
   "version": "1.0.0",
+  "description": "ULTRON - Standalone desktop AI assistant with 3D holographic orb, voice chat, and hand gesture tracking",
+  "main": "electron/main.js",
+  "author": "ULTRON",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 -H 0.0.0.0",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint ."
+    "build:next": "next build",
+    "build:electron": "electron-builder",
+    "build": "npm run build:next && npm run build:electron",
+    "start": "electron .",
+    "lint": "eslint .",
+    "package": "electron-builder",
+    "dist": "electron-builder"
   },
   "dependencies": {
     "@mediapipe/tasks-vision": "^0.10.35",
@@ -21,9 +29,53 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/three": "^0.185.0",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
     "eslint": "^10.13.0",
     "globals": "^17.13.0",
     "typescript": "^5",
     "typescript-eslint": "^8.72.0"
+  },
+  "build": {
+    "appId": "com.ultron.desktop",
+    "productName": "ULTRON",
+    "copyright": "Copyright © 2026 ULTRON",
+    "directories": {
+      "buildResources": "build/icons",
+      "output": "release"
+    },
+    "extraResources": [
+      {
+        "from": ".next/standalone",
+        "to": "standalone",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": ".next/standalone/node_modules",
+        "to": "standalone/node_modules",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": ".next/static",
+        "to": "standalone/.next/static"
+      },
+      {
+        "from": "public",
+        "to": "standalone/public"
+      }
+    ],
+    "files": [
+      "electron/**/*",
+      "app/**/*",
+      "lib/**/*",
+      "components/**/*",
+      "package.json",
+      "next.config.ts",
+      "tsconfig.json"
+    ]
   }
 }
